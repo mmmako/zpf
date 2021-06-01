@@ -98,6 +98,8 @@ nth SI (V a)  = a
 nth SI (a:>_)  = a
 nth (SS m') (_:>xs) = nth m' xs
 
+testerino v1 v2 n = nth n v1 + nth n v2
+
 n = QuasiQuoter { quoteExp = return . f . read }
     where f 1 = ConE 'SI
           f n = AppE (ConE 'SS) (f (n-1))
