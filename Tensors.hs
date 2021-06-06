@@ -66,9 +66,10 @@ replicate' (DConsS d SI) t = H t
 replicate' (DConsS d (SS n)) t = t :| (replicate' (DConsS d n) t)
 
 type family (a :: Dim) <~> (b :: Dim) :: Dim where
-    (DCons d n) <~> (DCons d' n) = DCons (d <~> d') n
-    (DCons d I) <~> (DCons d' n) = DCons (d <~> d') n
-    (DCons d n) <~> (DCons d' I) = DCons (d <~> d') n
+    (DCons d (S n)) <~> (DCons d' (S n)) = DCons (d <~> d') (S n)
+    (DCons d I) <~> (DCons d' (S n)) = DCons (d <~> d') (S n)
+    (DCons d (S n)) <~> (DCons d' I) = DCons (d <~> d') (S n)
+    (DCons d I) <~> (DCons d' I) = DCons (d <~> d') I
     DNil <~> d = d
     d <~> DNil = d
 {-
@@ -96,14 +97,17 @@ broadcast (H t1) (H t2) (DConsS d SI) = H (broadcast t1 t2 d)
 broadcast (H t1) (t2 :| t3) (DConsS d (SS n)) = (broadcast t1 t2 d) :| (broadcast (H t1) t3 (DConsS d n))
 broadcast (h1 :| t1) (h2 :| t2) (DConsS d (SS n)) = (broadcast h1 h2 d) :| undefined -- (broadcast t1 t2 (DConsS d (SS n)))
 -}
--- broadcast :: Tensor d a -> Tensor d' b -> DimS d -> DimS d' -> Tensor (d <~> d') (a, b)
-broadcast :: d'' ~ (d <~> d') => Tensor d a -> Tensor d' b -> DimS d -> DimS d' -> Tensor d'' (a, b)
+-- broadcast :: d'' ~ (d <~> d') => Tensor d a -> Tensor d' b -> DimS d -> DimS d' -> Tensor d'' (a, b)
+broadcast :: Tensor d a -> Tensor d' b -> DimS d -> DimS d' -> Tensor (d <~> d') (a, b)
 broadcast (L a) (L b) _ _ = L (a, b)
 broadcast l@(L _) (H t) d (DConsS d' _) = H (broadcast l t d d')
 broadcast l@(L _) (h :| t) d (DConsS d' (SS n)) = (broadcast l h d d') :| (broadcast l t d (DConsS d' n))
 broadcast (H t1) (H t2) (DConsS d SI) (DConsS d' SI) = H (broadcast t1 t2 d d')
 broadcast (H t1) (t2 :| t3) (DConsS d SI) (DConsS d' (SS n)) = (broadcast t1 t2 d d') :| (broadcast (H t1) t3 (DConsS d SI) (DConsS d' n))
-broadcast (h1 :| t1) (h2 :| t2) (DConsS d (SS n)) (DConsS d' (SS n')) = (broadcast h1 h2 d d') :| undefined -- (broadcast t1 t2 (DConsS d n) (DConsS d' n'))
+-- broadcast (H t1) (t2 :| t3) (DConsS d SI) (DConsS d' (SS n)) = (broadcast t1 t2 d d') :| (broadcast (H t1) t3 (DConsS d SI) (DConsS d' n))
+-- broadcast ((H h1) :| t1) ((H h2) :| t2) (DConsS (DConsS d SI) (SS n)) (DConsS (DConsS d' SI) (SS n')) =
+    -- (H (broadcast h1 h2 d d')) :| _
+-- broadcast (h1 :| t1) (h2 :| t2) (DConsS d (SS n)) (DConsS d' (SS n')) = (broadcast h1 h2 d d') :| undefined -- (broadcast t1 t2 (DConsS d n) (DConsS d' n'))
 
 {-
 infixr 6 :>
