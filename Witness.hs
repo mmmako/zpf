@@ -38,7 +38,6 @@ data Select :: PNat -> PNat -> * where
     B :: Broadcast m n Both => Select m n
     N :: Select m n
 
--- select :: Broadcast m n d => SPNat m -> SPNat n -> Select m n
 select :: SPNat m -> SPNat n -> Select m n
 select SI SI = B
 select SI (SS _) = R
