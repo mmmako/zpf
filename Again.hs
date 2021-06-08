@@ -53,14 +53,22 @@ broadcastEq (SS n) t = broadcastEq n t
 broadcastEq _ t = t
 -}
 
--- proof :: (Ok (S m <~> S n) ~ Just k) => SPNat (S m) -> SPNat (S n) -> SPNat (S n) :~: SPNat k
-proof' :: (Ok ((S m) <~> (S n)) ~ Just k) => SPNat (S m) -> SPNat (S n) -> ((Ok (S m <~> S n) ~ Just (S m)) => t) -> t
-proof' (SS SI) (SS SI) t = t
-proof' (SS m) (SS n) t = (proof' m n) t
+type family P (n :: PNat) :: PNat where
+    P (S n) = n
+    P I = I
 
+proof'' :: (Ok ((S m) <~> (S n)) ~ Just k) => SPNat m -> SPNat n -> ((Ok (m <~> n) ~ Just l) => t) -> t
+proof'' = undefined
+
+proof' :: (Ok ((S m) <~> (S n)) ~ Just k) => SPNat m -> SPNat n -> ((Ok (S m <~> S n) ~ Just (S m)) => t) -> t
+proof' (SS SI) (SS SI) t = t
+-- proof' (SS m) (SS n) t = let p = proof'' m n (proof' m n undefined) in undefined
+
+{-
 broadcast :: (Ok (m <~> n) ~ Just k) => SPNat m -> SPNat n -> SPNat k
 broadcast SI SI = SI
 broadcast SI (SS n) = SS n
 broadcast (SS n) SI = SS n
 -- broadcast (SS m) (SS n) = castWith (proof (SS m) (SS n)) (SS n)
 broadcast (SS m) (SS n) = proof' (SS m) (SS n) (SS m)
+-}
