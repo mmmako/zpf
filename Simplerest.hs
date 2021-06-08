@@ -17,41 +17,46 @@ data SPNat (n::PNat) where
 deriving instance Show (SPNat n)
 
 infixr 6 :>
-data Vec :: PNat -> * -> * where
-    V    :: a -> Vec I a
-    (:>) :: a -> Vec n a -> Vec (S n) a
+data Vec :: Maybe PNat -> * -> * where
+    Inv  :: Vec Nothing a
+    V    :: a -> Vec (Just I) a
+    (:>) :: a -> Vec (Just n) a -> Vec (Just (S n)) a
 
 deriving instance Show a => Show (Vec n a)
 
-data Broadcasts (m :: PNat) (n :: PNat) (k :: PNat) where
-    Equal :: Broadcasts n n n
-    LOne :: Broadcasts I n n
-    ROne :: Broadcasts n I n
+data Broadcasts (m :: PNat) (n :: PNat) (k :: Maybe PNat) where
+    Equal :: Broadcasts n n (Just n)
+    LOne :: Broadcasts I n (Just n)
+    ROne :: Broadcasts n I (Just n)
+    Nope :: Broadcasts m n Nothing
 
+{-
 vzip :: Vec n a -> Vec n b -> Vec n (a, b)
 vzip (V a) (V b) = V (a, b)
 vzip (a :> as) (b :> bs) = (a, b) :> vzip as bs
 
-broadcast :: Broadcasts m n k -> Vec m a -> Vec n b -> Vec k (a, b)
+broadcast :: Broadcasts m n (Just k) -> Vec m a -> Vec n b -> Vec k (a, b)
 broadcast Equal as bs = vzip as bs
 broadcast LOne (V a) (b :> bs) = (a, b) :> broadcast LOne (V a) bs
 broadcast ROne (a :> as) (V b) = (a, b) :> broadcast ROne as (V b)
 -- TODO i don't like these being here, but oh well
 broadcast LOne (V a) (V b) = V (a, b)
 broadcast ROne (V a) (V b) = V (a, b)
+-}
 
-oneEq :: Broadcasts I n m -> n :~: m
+oneEq :: Broadcasts I n (Just m) -> n :~: m
 oneEq Equal = Refl
 oneEq LOne = Refl
 oneEq ROne = Refl
 
-eq :: Broadcasts (S m) (S n) k -> m :~: n
+eq :: Broadcasts (S m) (S n) (Just k) -> m :~: n
 eq Equal = Refl
 
 -- TODO this needs to be constrained somehow, and that needs... constraints, right?
--- getBroadcast :: Vec m a -> Vec n b -> Broadcasts m n k -- (Broadcasts m n k, Vec k (a, b))
-getBroadcast :: CanBroadcast m n ~ k => SPNat m -> SPNat n -> Broadcasts m n k
-getBroadcast SI _ = LOne
+-- getBroadcast :: Vec (Just m) a -> Vec (Just n) b -> Broadcasts m n k
+getBroadcast :: SPNat m -> SPNat n -> Broadcasts m n k
+getBroadcast SI SI = LOne
+{-
 getBroadcast _ SI = ROne
 getBroadcast (SS m@(SS _)) (SS n@(SS _)) = Equal
 
@@ -62,3 +67,4 @@ type family CanBroadcast (m :: PNat) (n :: PNat) :: PNat where
     CanBroadcast m n = TypeError (Text "‘CanBroadcast’ didn't match"
                          :$$: Text "when applied to the types ‘"
                          :<>: ShowType m :<>: Text "’ and ‘" :<>: ShowType n :<>: Text "’") 
+-}
