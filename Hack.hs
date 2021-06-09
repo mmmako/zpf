@@ -48,3 +48,45 @@ broadcastUnsafe as (V b) = (\(x, y) -> (y, x)) <$> match b as
 
 broadcast :: m <~> n ~ True => Vec m a -> Vec n b -> Vec (m <~~> n) (a, b)
 broadcast = broadcastUnsafe
+
+-- NB: more like bzipWith
+bmap :: m <~> n ~ True => (a -> b -> c) -> Vec m a -> Vec n b -> Vec (m <~~> n) c
+bmap f as bs = (\(a, b) -> f a b) <$> broadcast as bs
+
+intToNat :: Int -> PNat
+intToNat 1 = I
+intToNat n = S (intToNat (n - 1))
+
+data Ex (p :: k -> *) where
+    Ex :: p i -> Ex p
+
+data (p :: k -> *) :*: (q :: k -> *) :: k -> * where
+    (:&:) :: p k -> q k -> (p :*: q) k
+
+newtype Flip f a b = Flip {unFlip :: f b a}
+
+type WLenVec a = Ex (SPNat :*: Flip Vec a)
+
+wrapLenVec :: [a] -> WLenVec a
+wrapLenVec [] = undefined
+wrapLenVec [x] = Ex (SI :&: Flip (V x))
+wrapLenVec (x : xs) = case wrapLenVec xs of
+    Ex (n :&: Flip v) -> Ex (SS n :&: Flip (x :> v))
+
+type WVec a = Ex (Flip Vec a)
+
+wrapVec :: [a] -> WVec a
+wrapVec [] = undefined
+wrapVec [x]      = Ex (Flip (V x))
+wrapVec (x:xs)  = case wrapVec xs of
+  Ex (Flip v) -> Ex (Flip (x :> v))
+
+vlength' :: Vec n a -> Integer
+vlength' (V _) = 1
+vlength' (_ :> v) = 1 + vlength' v
+
+vlength :: Vec n a -> SPNat n
+vlength (V _) = SI
+vlength (_ :> v) = SS (vlength v)
+
+type WPNat = Ex SPNat
