@@ -17,20 +17,20 @@ instance Functor (Tensor d) where
     fmap f (H t) = H (fmap f t)
     fmap f (t :- ts) = (fmap f t) :- (fmap f ts)
 
+{-
 instance Applicative (Tensor d) where -- TODO meh
     (L f) <*> (L x) = L (f x)
     (H fs) <*> (H t) = H (fs <*> t)
     (f :- fs) <*> (t :- ts) = (f <*> t) :- (fs <*> ts)
+-}
 
+{-
 mul :: Num a => Tensor (DCons m (DCons n (DCons I DNil))) a -> Tensor (DCons n (DCons k (DCons I DNil))) a -> Tensor (DCons m (DCons k (DCons I DNil))) a
 -- 1x1 * 1x1 -> 1x1
--- mul (H (H (L x))) (H (H (L y))) = H (H (L (x*y)))
 mul (H (H (L x))) m = (x *) <$> m
--- mul [m|[[Lx]]|] [m|[[Ly]]|] = [m|[[Lz]]|]
 -- 1x(n+1) * (n+1)x1 -> 1x1
 mul (H ((L x) :- xs)) ((H (L y)) :- ys) = (+) <$> H (H (L (x*y))) <*> mul (H xs) ys
 -- 1xn * nxk -> 1xk
--- mul v@(H _) t@((_ :- _) :- _) = H ((L x) :- t'')
 mul v@(H _) t@((_ :- _) :- _) = H ((L x) :- t'')
     where (H (H (L x))) = mul v r
           (r, t') = tear t
@@ -39,15 +39,14 @@ mul v@(H _) t@((_ :- _) :- _) = H ((L x) :- t'')
 mul (r :- rs) m = r' :- rs'
     where H r' = mul (H r) m -- TODO does this go through pattern match checks?
           rs' = mul rs m
-
-columnify :: Tensor (DCons n (DCons I DNil)) a -> Tensor (DCons n (DCons I (DCons I DNil))) a
-columnify = undefined
+mul (H (H (H x))) m = _
 
 tear :: Tensor (DCons m (DCons (S n) (DCons I DNil))) a -> (Tensor (DCons m (DCons I (DCons I DNil))) a, Tensor (DCons m (DCons n (DCons I DNil))) a)
 tear (H ((L a) :- as)) = (H (H (L a)), H as)
 tear (H ((H a) :- as)) = (H (H (H a)), H as)
 tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
     where (as, rs') = tear rs
+-}
 
 {-
 gmul :: Num a => Tensor (DimAppend d (DCons m (DNil n))) a -> Tensor (DimAppend d (DCons n (DNil k))) a -> Tensor (DimAppend d (DCons m (DNil k))) a
