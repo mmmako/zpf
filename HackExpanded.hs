@@ -1,26 +1,7 @@
 {-# OPTIONS_GHC -W #-}
 {-# LANGUAGE GADTs, DataKinds, KindSignatures, StandaloneDeriving, TypeFamilies, TypeOperators, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, TemplateHaskell, QuasiQuotes, PolyKinds, FlexibleContexts, RankNTypes #-}
 
-data PNat :: * where
-    I :: PNat
-    S :: PNat -> PNat deriving Show
-
-data SPNat (n::PNat) where
-    SI :: SPNat I
-    SS :: SPNat n -> SPNat (S n)
-
-deriving instance Show (SPNat n)
-
-data Dim = DNil PNat | DCons PNat Dim deriving Show
-
-data SDim :: Dim -> * where
-    SDNil  :: SPNat n -> SDim (DNil n)
-    SDCons :: SPNat n -> SDim d -> SDim (DCons n d)
-
-data Tensor :: Dim -> * -> * where
-    L    :: a -> Tensor (DNil I) a
-    (:|) :: Tensor d a -> Tensor (DCons n d) a -> Tensor (DCons (S n) d) a
-    H    :: Tensor d a -> Tensor (DCons I d) a
+import TensorQuasi
 
 type family Max (m :: PNat) (n :: PNat) :: PNat where
     Max I n = n
@@ -28,25 +9,50 @@ type family Max (m :: PNat) (n :: PNat) :: PNat where
     Max (S m) (S n) = S (Max m n)
 
 type family DimAppend (d1 :: Dim) (d2 :: Dim) :: Dim where
-    DimAppend (DNil n) d = DCons n d
+    DimAppend DNil d = d
     DimAppend (DCons n d1) d = DCons n (DimAppend d1 d)
 
 instance Functor (Tensor d) where
     fmap f (L x) = L (f x)
     fmap f (H t) = H (fmap f t)
-    fmap f (t :| ts) = (fmap f t) :| (fmap f ts)
+    fmap f (t :- ts) = (fmap f t) :- (fmap f ts)
+
+instance Applicative (Tensor d) where -- TODO meh
+    (L f) <*> (L x) = L (f x)
+    (H fs) <*> (H t) = H (fs <*> t)
+    (f :- fs) <*> (t :- ts) = (f <*> t) :- (fs <*> ts)
+
+mul :: Num a => Tensor (DCons m (DCons n (DCons I DNil))) a -> Tensor (DCons n (DCons k (DCons I DNil))) a -> Tensor (DCons m (DCons k (DCons I DNil))) a
+-- 1x1 * 1x1 -> 1x1
+-- mul (H (H (L x))) (H (H (L y))) = H (H (L (x*y)))
+mul (H (H (L x))) m = (x *) <$> m
+-- mul [m|[[Lx]]|] [m|[[Ly]]|] = [m|[[Lz]]|]
+-- 1x(n+1) * (n+1)x1 -> 1x1
+mul (H ((L x) :- xs)) ((H (L y)) :- ys) = (+) <$> H (H (L (x*y))) <*> mul (H xs) ys
+-- 1xn * nxk -> 1xk
+-- mul v@(H _) t@((_ :- _) :- _) = H ((L x) :- t'')
+mul v@(H _) t@((_ :- _) :- _) = H ((L x) :- t'')
+    where (H (H (L x))) = mul v r
+          (r, t') = tear t
+          H t'' = mul v t'
+-- (m+1)xn * nxk -> (m+1)xk
+mul (r :- rs) m = r' :- rs'
+    where H r' = mul (H r) m -- TODO does this go through pattern match checks?
+          rs' = mul rs m
+
+columnify :: Tensor (DCons n (DCons I DNil)) a -> Tensor (DCons n (DCons I (DCons I DNil))) a
+columnify = undefined
+
+tear :: Tensor (DCons m (DCons (S n) (DCons I DNil))) a -> (Tensor (DCons m (DCons I (DCons I DNil))) a, Tensor (DCons m (DCons n (DCons I DNil))) a)
+tear (H ((L a) :- as)) = (H (H (L a)), H as)
+tear (H ((H a) :- as)) = (H (H (H a)), H as)
+tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
+    where (as, rs') = tear rs
 
 {-
-mul :: Num a => Tensor (DCons m (DNil n)) a -> Tensor (DCons n (DNil k)) a -> Tensor (DCons m (DNil k)) a
--- 1xn * 1x1 -> 1xn
-mul (H v) (H (L x)) = H ((x *) <$> v)
--- mxn * nxk -> mxk
-mul m (c :| cs) = undefined
-    where c'' = mul m _
--}
-
 gmul :: Num a => Tensor (DimAppend d (DCons m (DNil n))) a -> Tensor (DimAppend d (DCons n (DNil k))) a -> Tensor (DimAppend d (DCons m (DNil k))) a
 gmul = undefined
+-}
 
 {-
 data Which = WLeft | WRight | WBoth
