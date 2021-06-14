@@ -3,13 +3,17 @@
 
 import TensorQuasi
 
+-- import Data.Type.Equality
+
+type Matrix m n = Tensor (DCons m (DCons n DNil))
+
 type family Max (m :: PNat) (n :: PNat) :: PNat where
     Max I n = n
     Max n I = n
     Max (S m) (S n) = S (Max m n)
 
 type family DimAppend (d1 :: Dim) (d2 :: Dim) :: Dim where
-    DimAppend DNil d = d
+    DimAppend DNil d = d -- TODO make sure it's not DCons I d
     DimAppend (DCons n d1) d = DCons n (DimAppend d1 d)
 
 instance Functor (Tensor d) where
@@ -17,19 +21,12 @@ instance Functor (Tensor d) where
     fmap f (H t) = H (fmap f t)
     fmap f (t :- ts) = (fmap f t) :- (fmap f ts)
 
-{-
-instance Applicative (Tensor d) where -- TODO meh
-    (L f) <*> (L x) = L (f x)
-    (H fs) <*> (H t) = H (fs <*> t)
-    (f :- fs) <*> (t :- ts) = (f <*> t) :- (fs <*> ts)
--}
-
-{-
-mul :: Num a => Tensor (DCons m (DCons n (DCons I DNil))) a -> Tensor (DCons n (DCons k (DCons I DNil))) a -> Tensor (DCons m (DCons k (DCons I DNil))) a
+mul :: Num a => Matrix m n a -> Matrix n k a -> Matrix m k a
 -- 1x1 * 1x1 -> 1x1
 mul (H (H (L x))) m = (x *) <$> m
 -- 1x(n+1) * (n+1)x1 -> 1x1
-mul (H ((L x) :- xs)) ((H (L y)) :- ys) = (+) <$> H (H (L (x*y))) <*> mul (H xs) ys
+mul (H ((L x) :- xs)) ((H (L y)) :- ys) = H (H (L (x*y + z)))
+    where H (H (L z)) = mul (H xs) ys
 -- 1xn * nxk -> 1xk
 mul v@(H _) t@((_ :- _) :- _) = H ((L x) :- t'')
     where (H (H (L x))) = mul v r
@@ -39,18 +36,24 @@ mul v@(H _) t@((_ :- _) :- _) = H ((L x) :- t'')
 mul (r :- rs) m = r' :- rs'
     where H r' = mul (H r) m -- TODO does this go through pattern match checks?
           rs' = mul rs m
-mul (H (H (H x))) m = _
 
-tear :: Tensor (DCons m (DCons (S n) (DCons I DNil))) a -> (Tensor (DCons m (DCons I (DCons I DNil))) a, Tensor (DCons m (DCons n (DCons I DNil))) a)
+tear :: Matrix m (S n) a -> (Matrix m I a, Matrix m n a)
 tear (H ((L a) :- as)) = (H (H (L a)), H as)
-tear (H ((H a) :- as)) = (H (H (H a)), H as)
 tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
     where (as, rs') = tear rs
--}
+
+-- gmul :: Num a => Tensor (DimAppend d (DCons m (DCons n DNil))) a -> Tensor (DimAppend d (DCons n (DCons k DNil))) a -> Tensor (DimAppend d (DCons m (DCons k DNil))) a
+-- gmul (H m'@(H (H (L _)))) (H m@(H (H (L _)))) = castWith proof (H res)
+    -- where res = mul m' m
+gmul :: Num a => Tensor (DimAppend d (DCons m (DCons n DNil))) a -> Tensor (DimAppend d (DCons n (DCons k DNil))) a -> SDim d -> Tensor (DimAppend d (DCons m (DCons k DNil))) a
+gmul m1 m2 SDNil = mul m1 m2
+gmul (H m1) (H m2) (SDCons SI d) = H undefined -- (gmul m1 m2 d)
+    where res = gmul m1 undefined d
 
 {-
-gmul :: Num a => Tensor (DimAppend d (DCons m (DNil n))) a -> Tensor (DimAppend d (DCons n (DNil k))) a -> Tensor (DimAppend d (DCons m (DNil k))) a
-gmul = undefined
+gmul m'@(H ((L _) :- _)) m@((H (L _)) :- _) = mul m' m
+gmul v@(H _) t@((_ :- _) :- _) = mul v t
+gmul m'@(r :- rs) m = mul m' m
 -}
 
 {-

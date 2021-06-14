@@ -27,10 +27,9 @@ data SDim :: Dim -> * where
 
 infixr 6 :-
 data Tensor :: Dim -> * -> * where
-    L    :: a -> Tensor (DCons I DNil) a
+    L    :: a -> Tensor DNil a
     (:-) :: Tensor d a -> Tensor (DCons n d) a -> Tensor (DCons (S n) d) a
     H    :: Tensor d a -> Tensor (DCons I d) a
-    -- H    :: Tensor (DCons n d) a -> Tensor (DCons I (DCons n d)) a
 
 -- deriving instance Show a => Show (Tensor d a)
 instance Show a => Show (Tensor d a) where
