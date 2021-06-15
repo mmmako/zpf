@@ -6,7 +6,7 @@ import TensorQuasi
 
 -- import Data.Type.Equality
 
-type Matrix m n = Tensor (DCons m (DCons n DNil))
+type Matrix m n a = Tensor (DCons m (DCons n DNil)) a
 
 type family Max (m :: PNat) (n :: PNat) :: PNat where
     Max I n = n
@@ -125,6 +125,7 @@ elongateInternal t1 t2 (SLeftBy n) = (t1, rpad t2 n)
 elongate :: Tensor d1 a -> Tensor d2 a -> (Tensor (ElongateLeft d1 d2) a, Tensor (ElongateRight d1 d2) a)
 elongate t1 t2 = elongateInternal t1 t2 (depthDiff t1 t2)
 
+{-
 proof :: Tensor d1 a -> Tensor d2 b -> (DepthDiff (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ Equal => t) -> t
 proof (L _) (L _) t = t
 
@@ -134,7 +135,6 @@ proof1 :: Tensor d1 a -> Tensor d2 b -> (DepthDiff (ElontageL
 strongerUnsafeBroadcast :: Tensor d1 a -> Tensor d2 a -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, a)
 strongerUnsafeBroadcast t1 t2 = proof t1 t2 $ unsafeBroadcast t1' t2'
     where (t1', t2') = elongate t1 t2
-{-
 strongerUnsafeBroadcast as bs = z
     -- where qwe = elongate as bs
     where SDP x y = elongate as bs
@@ -184,6 +184,88 @@ a |+| b = uncurry (+) <$> weakBroadcast a b
 
 infixl 7 |*|
 a |*| b = uncurry (*) <$> weakBroadcast a b
+
+data Ex (p :: k -> *) where
+    Ex :: p i -> Ex p
+
+data (p :: k -> *) :*: (q :: k -> *) :: k -> * where
+    (:&:) :: p k -> q k -> (p :*: q) k
+
+data (p :: iota -> *) :**: (q :: kappa -> *) :: (iota, kappa) -> * where
+    (:&&:) :: p iota -> q kappa -> (p :**: q) '(iota, kappa)
+
+type Size = SPNat :**: SPNat
+
+data Ex2 (p :: k -> i -> *) where
+    Ex2 :: p j l -> Ex2 p
+
+newtype Matrix1 a m n = Matrix1 (Tensor (DCons m (DCons n DNil)) a)
+
+main = do
+    str <- getContents
+    let ll = map (map (read :: String -> Integer) . words) $ lines str
+        m = (\(Just x) -> x) $ fromLL ll
+        m' = mapEx2 m
+    putStrLn $ showEx (Just m')
+
+qwe str = let ll = map (map (read :: String -> Integer) . words) $ lines str in ll
+
+showEx :: Maybe (Ex2 (Matrix1 Integer)) -> String
+showEx (Just (Ex2 (Matrix1 m))) = show m
+showEx Nothing = "Nothing"
+
+mapEx2 :: Ex2 (Matrix1 Integer) -> Ex2 (Matrix1 Integer)
+mapEx2 (Ex2 (Matrix1 m)) = Ex2 (Matrix1 (fmap (2*) m))
+
+fromLL :: [[Integer]] -> Maybe (Ex2 (Matrix1 Integer))
+fromLL [l] = case fromL l of
+    Ex (Matrix1 m) -> Just (Ex2 (Matrix1 m))
+fromLL (l:ls) = case fromLL ls of
+    Nothing -> Nothing
+    Just m -> addLine (fromL l) m
+
+fromL :: [Integer] -> Ex (Matrix1 Integer I)
+fromL [x] = Ex (Matrix1 (H (H (L x))))
+fromL (x:xs) = case fromL xs of
+    Ex (Matrix1 (H v)) -> Ex (Matrix1 (H (L x :- v)))
+
+addLine :: Ex (Matrix1 Integer I) -> Ex2 (Matrix1 Integer) -> Maybe (Ex2 (Matrix1 Integer))
+addLine (Ex (Matrix1 m@(H _))) (Ex2 (Matrix1 m'@(H _))) =
+    case sameLength m m' of
+        Nothing -> Nothing
+        Just (H m'') -> Just (Ex2 (Matrix1 (m'' :- m')))
+addLine (Ex (Matrix1 m@(H _))) (Ex2 (Matrix1 m''@(m' :- ms))) =
+    case sameLength m (H m') of
+        Nothing -> Nothing
+        Just (H m''') -> Just (Ex2 (Matrix1 (m''' :- m'')))
+
+sameLength :: Matrix I n a -> Matrix I m b -> Maybe (Matrix I m a)
+sameLength (H (H (L a))) (H (H (L _))) = Just $ H (H (L a))
+sameLength (H (H (L _))) (H (_ :- _)) = Nothing
+sameLength (H (_ :- _)) (H (H (L _))) = Nothing
+sameLength (H (a :- v)) (H (_ :- v')) =
+    case sameLength (H v) (H v') of
+        Nothing -> Nothing
+        Just (H v'') -> Just (H (a :- v''))
+
+{-
+infixr 6 :>
+data Vec :: PNat -> * -> * where
+    V    :: a -> Vec I a
+    (:>) :: a -> Vec n a -> Vec (S n) a
+
+deriving instance Show a => Show (Vec n a)
+
+toVector :: [Integer] -> Ex (Flip Vec Integer)
+toVector [x] = Ex $ Flip $ V x
+toVector (x:xs) =
+    case toVector xs of
+        Ex (Flip xs') -> Ex (Flip (x :> xs'))
+
+readImage :: String -> Maybe (Ex (Flip Tensor Integer))
+readImage s = Just $ Ex $ Flip $ L 123
+    where ll = map (map (read :: String -> Integer) . words) $ lines s
+-}
 
 {-
 gmul m'@(H ((L _) :- _)) m@((H (L _)) :- _) = mul m' m
@@ -253,14 +335,6 @@ bmap f as bs = (\(a, b) -> f a b) <$> broadcast as bs
 intToNat :: Int -> PNat
 intToNat 1 = I
 intToNat n = S (intToNat (n - 1))
-
-data Ex (p :: k -> *) where
-    Ex :: p i -> Ex p
-
-data (p :: k -> *) :*: (q :: k -> *) :: k -> * where
-    (:&:) :: p k -> q k -> (p :*: q) k
-
-newtype Flip f a b = Flip {unFlip :: f b a}
 
 type WLenVec a = Ex (SPNat :*: Flip Vec a)
 
