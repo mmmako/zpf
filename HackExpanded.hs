@@ -28,10 +28,12 @@ type family CanBroadcast (d1 :: Dim) (d2 :: Dim) :: Bool where
     CanBroadcast (DCons n d1) (DCons n d2) = CanBroadcast d1 d2
     CanBroadcast _ _ = False
 
+{-
 type family SameDepth (d1 :: Dim) (d2 :: Dim) :: Bool where
     SameDepth DNil DNil = True
     SameDepth (DCons _ d1) (DCons _ d2) = SameDepth d1 d2
     SameDepth _ _ = False
+-}
 
 data Longer = LeftBy PNat | RightBy PNat | Equal
 
@@ -123,9 +125,14 @@ elongateInternal t1 t2 (SLeftBy n) = (t1, rpad t2 n)
 elongate :: Tensor d1 a -> Tensor d2 a -> (Tensor (ElongateLeft d1 d2) a, Tensor (ElongateRight d1 d2) a)
 elongate t1 t2 = elongateInternal t1 t2 (depthDiff t1 t2)
 
+proof :: Tensor d1 a -> Tensor d2 b -> (DepthDiff (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ Equal => t) -> t
+proof (L _) (L _) t = t
+
+proof1 :: Tensor d1 a -> Tensor d2 b -> (DepthDiff (ElontageL
+
 -- TODO why (a, a) again?
 strongerUnsafeBroadcast :: Tensor d1 a -> Tensor d2 a -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, a)
-strongerUnsafeBroadcast t1 t2 = unsafeBroadcast t1' t2'
+strongerUnsafeBroadcast t1 t2 = proof t1 t2 $ unsafeBroadcast t1' t2'
     where (t1', t2') = elongate t1 t2
 {-
 strongerUnsafeBroadcast as bs = z
@@ -160,7 +167,7 @@ tear (H ((L a) :- as)) = (H (H (L a)), H as)
 tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
     where (as, rs') = tear rs
 
-unsafeBroadcast :: SameDepth d1 d2 ~ True => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+unsafeBroadcast :: DepthDiff d1 d2 ~ Equal => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 -- unsafeBroadcast :: Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 unsafeBroadcast (L a) (L b) = L (a, b)
 unsafeBroadcast (H as) (H bs) = H (unsafeBroadcast as bs)
@@ -169,7 +176,7 @@ unsafeBroadcast (a :- as) (H bs) = (unsafeBroadcast a bs) :- (unsafeBroadcast as
 unsafeBroadcast (H as) (b :- bs) = (unsafeBroadcast as b) :- (unsafeBroadcast (H as) bs)
 
 -- TODO shouldn't CanBroadcast imply SameDepth?
-weakBroadcast :: (SameDepth d1 d2 ~ True, CanBroadcast d1 d2 ~ True) => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+weakBroadcast :: (DepthDiff d1 d2 ~ Equal, CanBroadcast d1 d2 ~ True) => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 weakBroadcast = unsafeBroadcast
 
 infixl 6 |+|
