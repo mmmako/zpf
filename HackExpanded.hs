@@ -56,9 +56,6 @@ type family DepthDiff (d1 :: Dim) (d2 :: Dim) :: Longer where
     DepthDiff (DCons _ d) DNil = LongerS (DepthDiff d DNil)
     DepthDiff DNil (DCons _ d) = LongerS (DepthDiff DNil d)
 
--- TODO this is weird
-data DimPair = DP Dim Dim
-
 type family Reverse (d :: Dim) (a :: Dim) :: Dim where
     Reverse DNil a = a
     Reverse (DCons n d) a = Reverse d (DCons n a)
@@ -67,21 +64,19 @@ type family RPad (d :: Dim) (n :: PNat) :: Dim where
     RPad d I = DCons I d
     RPad d (S n) = DCons I (RPad d n)
 
-type family ElongateInternal (d1 :: Dim) (d2 :: Dim) (diff :: Longer) :: DimPair where
-    ElongateInternal d1 d2 Equal = DP d1 d2
-    ElongateInternal d1 d2 (RightBy n) = DP (RPad d1 n) d2
-    ElongateInternal d1 d2 (LeftBy n) = DP d1 (RPad d2 n)
+type family ElongateInternalLeft (d1 :: Dim) (d2 :: Dim) (diff :: Longer) :: Dim where
+    ElongateInternalLeft d1 d2 Equal = d1
+    ElongateInternalLeft d1 d2 (RightBy n) = RPad d1 n
+    ElongateInternalLeft d1 d2 (LeftBy n) = d1
+type family ElongateInternalRight (d1 :: Dim) (d2 :: Dim) (diff :: Longer) :: Dim where
+    ElongateInternalRight d1 d2 Equal = d2
+    ElongateInternalRight d1 d2 (RightBy n) = d2
+    ElongateInternalRight d1 d2 (LeftBy n) = RPad d2 n
 
-type family Elongate (d1 :: Dim) (d2 :: Dim) :: DimPair where
-    Elongate d1 d2 = ElongateInternal d1 d2 (DepthDiff d1 d2)
-
-type family BrDP (dp :: DimPair) :: Dim where
-    BrDP (DP d1 d2) = d1 <~> d2
-
-instance Functor (Tensor d) where
-    fmap f (L x) = L (f x)
-    fmap f (H t) = H (fmap f t)
-    fmap f (t :- ts) = (fmap f t) :- (fmap f ts)
+type family ElongateLeft (d1 :: Dim) (d2 :: Dim) :: Dim where
+    ElongateLeft d1 d2 = ElongateInternalLeft d1 d2 (DepthDiff d1 d2)
+type family ElongateRight (d1 :: Dim) (d2 :: Dim) :: Dim where
+    ElongateRight d1 d2 = ElongateInternalRight d1 d2 (DepthDiff d1 d2)
 
 longerS :: SLonger l -> SLonger (LongerS l)
 longerS SEqual = SEqual
@@ -115,37 +110,34 @@ depthDiff (a :- _) (H b) = depthDiff a b
 depthDiff (H a) (b :- _) = depthDiff a b
 depthDiff (a :- _) (b :- _) = depthDiff a b
 
--- TODO like above, this should be SDim?
-data SDimPair (dp :: DimPair) a b where
-    SDP :: Tensor d1 a -> Tensor d2 b -> SDimPair (DP d1 d2) a b
-
-deriving instance (Show a, Show b) => Show (SDimPair dp a b)
-
 rpad :: Tensor d a -> SPNat n -> Tensor (RPad d n) a
 rpad t SI = H t
 rpad t (SS n) = H (rpad t n)
 
-elongateInternal :: Tensor d1 a -> Tensor d2 b -> SLonger l -> SDimPair (ElongateInternal d1 d2 l) a b
-elongateInternal t1 t2 SEqual = SDP t1 t2
-elongateInternal t1 t2 (SRightBy n) = SDP (rpad t1 n) t2
-elongateInternal t1 t2 (SLeftBy n) = SDP t1 (rpad t2 n)
+elongateInternal :: Tensor d1 a -> Tensor d2 b -> SLonger l -> (Tensor (ElongateInternalLeft d1 d2 l) a, Tensor (ElongateInternalRight d1 d2 l) b)
+elongateInternal t1 t2 SEqual = (t1, t2)
+elongateInternal t1 t2 (SRightBy n) = (rpad t1 n, t2)
+elongateInternal t1 t2 (SLeftBy n) = (t1, rpad t2 n)
 
 -- TODO why `a` in both places????????
-elongate :: Tensor d1 a -> Tensor d2 a -> SDimPair (Elongate d1 d2) a a
+elongate :: Tensor d1 a -> Tensor d2 a -> (Tensor (ElongateLeft d1 d2) a, Tensor (ElongateRight d1 d2) a)
 elongate t1 t2 = elongateInternal t1 t2 (depthDiff t1 t2)
 
--- FIXME SameDepth
--- brDP :: SameDepth d1 d2 ~ True => SDimPair (DP d1 d2) a b -> Tensor (d1 <~> d2) (a, b)
-brDP :: SDimPair (DP d1 d2) a b -> Tensor (d1 <~> d2) (a, b)
-brDP (SDP as bs) = unsafeBroadcast as bs
-
 -- TODO why (a, a) again?
-strongerUnsafeBroadcast :: Tensor d1 a -> Tensor d2 a -> Tensor (BrDP (Elongate d1 d2)) (a, a)
--- strongerUnsafeBroadcast :: Elongate d1 d2 ~ SDP d1' d2' => Tensor d1 a -> Tensor d2 a -> Tensor (BrDP (SDimPair d1' d2')) (a, a)
+strongerUnsafeBroadcast :: Tensor d1 a -> Tensor d2 a -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, a)
+strongerUnsafeBroadcast t1 t2 = unsafeBroadcast t1' t2'
+    where (t1', t2') = elongate t1 t2
+{-
 strongerUnsafeBroadcast as bs = z
     -- where qwe = elongate as bs
     where SDP x y = elongate as bs
           z = unsafeBroadcast x y
+-}
+
+instance Functor (Tensor d) where
+    fmap f (L x) = L (f x)
+    fmap f (H t) = H (fmap f t)
+    fmap f (t :- ts) = (fmap f t) :- (fmap f ts)
 
 mul :: Num a => Matrix m n a -> Matrix n k a -> Matrix m k a
 -- 1x1 * 1x1 -> 1x1
@@ -168,9 +160,8 @@ tear (H ((L a) :- as)) = (H (H (L a)), H as)
 tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
     where (as, rs') = tear rs
 
--- FIXME SameDepth
--- unsafeBroadcast :: SameDepth d1 d2 ~ True => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
-unsafeBroadcast :: Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+unsafeBroadcast :: SameDepth d1 d2 ~ True => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+-- unsafeBroadcast :: Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 unsafeBroadcast (L a) (L b) = L (a, b)
 unsafeBroadcast (H as) (H bs) = H (unsafeBroadcast as bs)
 unsafeBroadcast (a :- as) (b :- bs) = ((unsafeBroadcast a b) :- (unsafeBroadcast as bs))
