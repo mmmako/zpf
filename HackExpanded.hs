@@ -35,10 +35,17 @@ type family SameDepth (d1 :: Dim) (d2 :: Dim) :: Bool where
 
 data Longer = LeftBy PNat | RightBy PNat | Equal
 
-type family SLonger (l :: Longer) :: Longer where
-    SLonger Equal = Equal
-    SLonger (LeftBy n) = LeftBy (S n)
-    SLonger (RightBy n) = RightBy (S n)
+data SLonger (l :: Longer) where
+    SEqual :: SLonger Equal
+    SLeftBy :: SPNat n -> SLonger (LeftBy n)
+    SRightBy :: SPNat n -> SLonger (RightBy n)
+
+deriving instance Show (SLonger l)
+
+type family LongerS (l :: Longer) :: Longer where
+    LongerS Equal = Equal
+    LongerS (LeftBy n) = LeftBy (S n)
+    LongerS (RightBy n) = RightBy (S n)
 
 -- sadly this requires UndecidableInstances
 type family DepthDiff (d1 :: Dim) (d2 :: Dim) :: Longer where
@@ -46,8 +53,8 @@ type family DepthDiff (d1 :: Dim) (d2 :: Dim) :: Longer where
     DepthDiff (DCons _ d1) (DCons _ d2) = DepthDiff d1 d2
     DepthDiff (DCons _ DNil) DNil = LeftBy I
     DepthDiff DNil (DCons _ DNil) = RightBy I
-    DepthDiff (DCons _ d) DNil = SLonger (DepthDiff d DNil)
-    DepthDiff DNil (DCons _ d) = SLonger (DepthDiff DNil d)
+    DepthDiff (DCons _ d) DNil = LongerS (DepthDiff d DNil)
+    DepthDiff DNil (DCons _ d) = LongerS (DepthDiff DNil d)
 
 -- TODO this is weird
 data DimPair = DP Dim Dim
@@ -73,8 +80,66 @@ instance Functor (Tensor d) where
     fmap f (H t) = H (fmap f t)
     fmap f (t :- ts) = (fmap f t) :- (fmap f ts)
 
-elongate :: Tensor d1 a -> Tensor d2 a -> Tensor (Elongate d1 d2) a
-elongate = undefined
+longerS :: SLonger l -> SLonger (LongerS l)
+longerS SEqual = SEqual
+longerS (SLeftBy n) = SLeftBy (SS n)
+longerS (SRightBy n) = SRightBy (SS n)
+
+-- mmmmm this is a nice function
+-- wait, but shouldn't it be on SDim? meh
+depthDiff :: Tensor d1 a -> Tensor d2 a -> SLonger (DepthDiff d1 d2)
+-- DepthDiff DNil DNil = Equal
+depthDiff (L _) (L _) = SEqual
+-- DepthDiff (DCons _ DNil) DNil = LeftBy I
+depthDiff (H (L _)) (L _) = SLeftBy SI
+depthDiff ((L _) :- _) (L _) = SLeftBy SI
+-- DepthDiff DNil (DCons _ DNil) = RightBy I
+depthDiff (L _) (H (L _)) = SRightBy SI
+depthDiff (L _) ((L _) :- _) = SRightBy SI
+-- DepthDiff (DCons _ d) DNil = LongerS (DepthDiff d DNil)
+depthDiff (H a@(H _)) (L b) = longerS (depthDiff a (L b))
+depthDiff (H a@(_ :- _)) (L b) = longerS (depthDiff a (L b))
+depthDiff (a@(H _) :- _) (L b) = longerS (depthDiff a (L b))
+depthDiff (a@(_ :- _) :- _) (L b) = longerS (depthDiff a (L b))
+-- DepthDiff DNil (DCons _ d) = LongerS (DepthDiff d DNil)
+depthDiff (L a) (H b@(H _)) = longerS (depthDiff (L a) b)
+depthDiff (L a) (H b@(_ :- _)) = longerS (depthDiff (L a) b)
+depthDiff (L a) (b@(H _) :- _) = longerS (depthDiff (L a) b)
+depthDiff (L a) (b@(_ :- _) :- _) = longerS (depthDiff (L a) b)
+-- DepthDiff (DCons _ d1) (DCons _ d2) = DepthDiff d1 d2
+depthDiff (H a) (H b) = depthDiff a b
+depthDiff (a :- _) (H b) = depthDiff a b
+depthDiff (H a) (b :- _) = depthDiff a b
+depthDiff (a :- _) (b :- _) = depthDiff a b
+
+-- TODO like above, this should be SDim?
+{-
+data SDimPair (dp :: DimPair) a b where
+    SDP :: Tensor d1 a -> Tensor d2 b -> SDimPair (DP d1 d2) a b
+-}
+data SDimPair (dp :: DimPair) a b where
+    SDP :: Tensor d1 a -> Tensor d2 b -> SDimPair (DP d1 d2) a b
+
+deriving instance (Show a, Show b) => Show (SDimPair dp a b)
+
+{-
+type family RPad (d :: Dim) (n :: PNat) :: Dim where
+    RPad d I = DCons I d
+    RPad d (S n) = DCons I (RPad d n)
+-}
+
+rpad :: Tensor d a -> SPNat n -> Tensor (RPad d n) a
+rpad t SI = H t
+rpad t (SS n) = H (rpad t n)
+
+elongateInternal :: Tensor d1 a -> Tensor d2 b -> SLonger l -> SDimPair (ElongateInternal d1 d2 l) a b
+elongateInternal t1 t2 SEqual = SDP t1 t2
+elongateInternal t1 t2 (SRightBy n) = SDP (rpad t1 n) t2
+elongateInternal t1 t2 (SLeftBy n) = SDP t1 (rpad t2 n)
+
+-- TODO why `a` in both places????????
+elongate :: Tensor d1 a -> Tensor d2 a -> SDimPair (Elongate d1 d2) a a
+elongate t1 t2 = elongateInternal t1 t2 (depthDiff t1 t2)
 
 mul :: Num a => Matrix m n a -> Matrix n k a -> Matrix m k a
 -- 1x1 * 1x1 -> 1x1
