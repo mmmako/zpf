@@ -75,6 +75,9 @@ type family ElongateInternal (d1 :: Dim) (d2 :: Dim) (diff :: Longer) :: DimPair
 type family Elongate (d1 :: Dim) (d2 :: Dim) :: DimPair where
     Elongate d1 d2 = ElongateInternal d1 d2 (DepthDiff d1 d2)
 
+type family BrDP (dp :: DimPair) :: Dim where
+    BrDP (DP d1 d2) = d1 <~> d2
+
 instance Functor (Tensor d) where
     fmap f (L x) = L (f x)
     fmap f (H t) = H (fmap f t)
@@ -113,20 +116,10 @@ depthDiff (H a) (b :- _) = depthDiff a b
 depthDiff (a :- _) (b :- _) = depthDiff a b
 
 -- TODO like above, this should be SDim?
-{-
-data SDimPair (dp :: DimPair) a b where
-    SDP :: Tensor d1 a -> Tensor d2 b -> SDimPair (DP d1 d2) a b
--}
 data SDimPair (dp :: DimPair) a b where
     SDP :: Tensor d1 a -> Tensor d2 b -> SDimPair (DP d1 d2) a b
 
 deriving instance (Show a, Show b) => Show (SDimPair dp a b)
-
-{-
-type family RPad (d :: Dim) (n :: PNat) :: Dim where
-    RPad d I = DCons I d
-    RPad d (S n) = DCons I (RPad d n)
--}
 
 rpad :: Tensor d a -> SPNat n -> Tensor (RPad d n) a
 rpad t SI = H t
@@ -140,6 +133,19 @@ elongateInternal t1 t2 (SLeftBy n) = SDP t1 (rpad t2 n)
 -- TODO why `a` in both places????????
 elongate :: Tensor d1 a -> Tensor d2 a -> SDimPair (Elongate d1 d2) a a
 elongate t1 t2 = elongateInternal t1 t2 (depthDiff t1 t2)
+
+-- FIXME SameDepth
+-- brDP :: SameDepth d1 d2 ~ True => SDimPair (DP d1 d2) a b -> Tensor (d1 <~> d2) (a, b)
+brDP :: SDimPair (DP d1 d2) a b -> Tensor (d1 <~> d2) (a, b)
+brDP (SDP as bs) = unsafeBroadcast as bs
+
+-- TODO why (a, a) again?
+strongerUnsafeBroadcast :: Tensor d1 a -> Tensor d2 a -> Tensor (BrDP (Elongate d1 d2)) (a, a)
+-- strongerUnsafeBroadcast :: Elongate d1 d2 ~ SDP d1' d2' => Tensor d1 a -> Tensor d2 a -> Tensor (BrDP (SDimPair d1' d2')) (a, a)
+strongerUnsafeBroadcast as bs = z
+    -- where qwe = elongate as bs
+    where SDP x y = elongate as bs
+          z = unsafeBroadcast x y
 
 mul :: Num a => Matrix m n a -> Matrix n k a -> Matrix m k a
 -- 1x1 * 1x1 -> 1x1
@@ -162,7 +168,9 @@ tear (H ((L a) :- as)) = (H (H (L a)), H as)
 tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
     where (as, rs') = tear rs
 
-unsafeBroadcast :: SameDepth d1 d2 ~ True => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+-- FIXME SameDepth
+-- unsafeBroadcast :: SameDepth d1 d2 ~ True => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+unsafeBroadcast :: Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 unsafeBroadcast (L a) (L b) = L (a, b)
 unsafeBroadcast (H as) (H bs) = H (unsafeBroadcast as bs)
 unsafeBroadcast (a :- as) (b :- bs) = ((unsafeBroadcast a b) :- (unsafeBroadcast as bs))
