@@ -40,10 +40,10 @@ type family SLonger (l :: Longer) :: Longer where
     SLonger (LeftBy n) = LeftBy (S n)
     SLonger (RightBy n) = RightBy (S n)
 
+-- sadly this requires UndecidableInstances
 type family DepthDiff (d1 :: Dim) (d2 :: Dim) :: Longer where
     DepthDiff DNil DNil = Equal
-    -- sadly this requires UndecidableInstances
-    DepthDiff (DCons _ d1) (DCons _ d2) = SLonger (DepthDiff d1 d2)
+    DepthDiff (DCons _ d1) (DCons _ d2) = DepthDiff d1 d2
     DepthDiff (DCons _ DNil) DNil = LeftBy I
     DepthDiff DNil (DCons _ DNil) = RightBy I
     DepthDiff (DCons _ d) DNil = SLonger (DepthDiff d DNil)
@@ -56,16 +56,25 @@ type family Reverse (d :: Dim) (a :: Dim) :: Dim where
     Reverse DNil a = a
     Reverse (DCons n d) a = Reverse d (DCons n a)
 
-{-
-type family Elongate (d1 :: Dim) (d2 :: Dim) (diff :: Longer) :: DimPair where
-    Elongate d1 d2 Equal = DP d1 d2
-    Elongate d1 d2 (LeftBy n) = DP d1 d2
--}
+type family RPad (d :: Dim) (n :: PNat) :: Dim where
+    RPad d I = DCons I d
+    RPad d (S n) = DCons I (RPad d n)
+
+type family ElongateInternal (d1 :: Dim) (d2 :: Dim) (diff :: Longer) :: DimPair where
+    ElongateInternal d1 d2 Equal = DP d1 d2
+    ElongateInternal d1 d2 (RightBy n) = DP (RPad d1 n) d2
+    ElongateInternal d1 d2 (LeftBy n) = DP d1 (RPad d2 n)
+
+type family Elongate (d1 :: Dim) (d2 :: Dim) :: DimPair where
+    Elongate d1 d2 = ElongateInternal d1 d2 (DepthDiff d1 d2)
 
 instance Functor (Tensor d) where
     fmap f (L x) = L (f x)
     fmap f (H t) = H (fmap f t)
     fmap f (t :- ts) = (fmap f t) :- (fmap f ts)
+
+elongate :: Tensor d1 a -> Tensor d2 a -> Tensor (Elongate d1 d2) a
+elongate = undefined
 
 mul :: Num a => Matrix m n a -> Matrix n k a -> Matrix m k a
 -- 1x1 * 1x1 -> 1x1
