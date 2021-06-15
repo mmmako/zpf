@@ -57,7 +57,7 @@ ntToT (NTV v) = return $ VarE $ mkName v
 ntToT (NTLV v) = return $ AppE (ConE 'L) $ VarE $ mkName v
 ntToT (NT nts') = let (nt:nts) = reverse nts' in
         do a <- AppE (ConE 'H) <$> ntToT nt
-           foldM f a (reverse nts)
+           foldM f a nts
     where f e' nt = do
             e <- ntToT nt
             return (AppE (AppE (ConE '(:-)) e) e')

@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -W #-}
 {-# LANGUAGE GADTs, DataKinds, KindSignatures, StandaloneDeriving, TypeFamilies, TypeOperators, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, TemplateHaskell, QuasiQuotes, PolyKinds, FlexibleContexts, RankNTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 import TensorQuasi
 
@@ -15,6 +16,51 @@ type family Max (m :: PNat) (n :: PNat) :: PNat where
 type family DimAppend (d1 :: Dim) (d2 :: Dim) :: Dim where
     DimAppend DNil d = d -- TODO make sure it's not DCons I d
     DimAppend (DCons n d1) d = DCons n (DimAppend d1 d)
+
+type family (d1 :: Dim) <~> (d2 :: Dim) :: Dim where
+    DNil <~> DNil = DNil
+    DCons m d1 <~> DCons n d2 = DCons (Max m n) (d1 <~> d2)
+
+type family CanBroadcast (d1 :: Dim) (d2 :: Dim) :: Bool where
+    CanBroadcast DNil DNil = True
+    CanBroadcast (DCons I d1) (DCons n d2) = CanBroadcast d1 d2
+    CanBroadcast (DCons n d1) (DCons I d2) = CanBroadcast d1 d2
+    CanBroadcast (DCons n d1) (DCons n d2) = CanBroadcast d1 d2
+    CanBroadcast _ _ = False
+
+type family SameDepth (d1 :: Dim) (d2 :: Dim) :: Bool where
+    SameDepth DNil DNil = True
+    SameDepth (DCons _ d1) (DCons _ d2) = SameDepth d1 d2
+    SameDepth _ _ = False
+
+data Longer = LeftBy PNat | RightBy PNat | Equal
+
+type family SLonger (l :: Longer) :: Longer where
+    SLonger Equal = Equal
+    SLonger (LeftBy n) = LeftBy (S n)
+    SLonger (RightBy n) = RightBy (S n)
+
+type family DepthDiff (d1 :: Dim) (d2 :: Dim) :: Longer where
+    DepthDiff DNil DNil = Equal
+    -- sadly this requires UndecidableInstances
+    DepthDiff (DCons _ d1) (DCons _ d2) = SLonger (DepthDiff d1 d2)
+    DepthDiff (DCons _ DNil) DNil = LeftBy I
+    DepthDiff DNil (DCons _ DNil) = RightBy I
+    DepthDiff (DCons _ d) DNil = SLonger (DepthDiff d DNil)
+    DepthDiff DNil (DCons _ d) = SLonger (DepthDiff DNil d)
+
+-- TODO this is weird
+data DimPair = DP Dim Dim
+
+type family Reverse (d :: Dim) (a :: Dim) :: Dim where
+    Reverse DNil a = a
+    Reverse (DCons n d) a = Reverse d (DCons n a)
+
+{-
+type family Elongate (d1 :: Dim) (d2 :: Dim) (diff :: Longer) :: DimPair where
+    Elongate d1 d2 Equal = DP d1 d2
+    Elongate d1 d2 (LeftBy n) = DP d1 d2
+-}
 
 instance Functor (Tensor d) where
     fmap f (L x) = L (f x)
@@ -42,13 +88,22 @@ tear (H ((L a) :- as)) = (H (H (L a)), H as)
 tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
     where (as, rs') = tear rs
 
--- gmul :: Num a => Tensor (DimAppend d (DCons m (DCons n DNil))) a -> Tensor (DimAppend d (DCons n (DCons k DNil))) a -> Tensor (DimAppend d (DCons m (DCons k DNil))) a
--- gmul (H m'@(H (H (L _)))) (H m@(H (H (L _)))) = castWith proof (H res)
-    -- where res = mul m' m
-gmul :: Num a => Tensor (DimAppend d (DCons m (DCons n DNil))) a -> Tensor (DimAppend d (DCons n (DCons k DNil))) a -> SDim d -> Tensor (DimAppend d (DCons m (DCons k DNil))) a
-gmul m1 m2 SDNil = mul m1 m2
-gmul (H m1) (H m2) (SDCons SI d) = H undefined -- (gmul m1 m2 d)
-    where res = gmul m1 undefined d
+unsafeBroadcast :: SameDepth d1 d2 ~ True => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+unsafeBroadcast (L a) (L b) = L (a, b)
+unsafeBroadcast (H as) (H bs) = H (unsafeBroadcast as bs)
+unsafeBroadcast (a :- as) (b :- bs) = ((unsafeBroadcast a b) :- (unsafeBroadcast as bs))
+unsafeBroadcast (a :- as) (H bs) = (unsafeBroadcast a bs) :- (unsafeBroadcast as (H bs))
+unsafeBroadcast (H as) (b :- bs) = (unsafeBroadcast as b) :- (unsafeBroadcast (H as) bs)
+
+-- TODO shouldn't CanBroadcast imply SameDepth?
+weakBroadcast :: (SameDepth d1 d2 ~ True, CanBroadcast d1 d2 ~ True) => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+weakBroadcast = unsafeBroadcast
+
+infixl 6 |+|
+a |+| b = uncurry (+) <$> weakBroadcast a b
+
+infixl 7 |*|
+a |*| b = uncurry (*) <$> weakBroadcast a b
 
 {-
 gmul m'@(H ((L _) :- _)) m@((H (L _)) :- _) = mul m' m
