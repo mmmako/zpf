@@ -125,21 +125,23 @@ elongateInternal t1 t2 (SLeftBy n) = (t1, rpad t2 n)
 elongate :: Tensor d1 a -> Tensor d2 a -> (Tensor (ElongateLeft d1 d2) a, Tensor (ElongateRight d1 d2) a)
 elongate t1 t2 = elongateInternal t1 t2 (depthDiff t1 t2)
 
-{-
 proof :: Tensor d1 a -> Tensor d2 b -> (DepthDiff (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ Equal => t) -> t
 proof (L _) (L _) t = t
+proof (H (L _)) (L a) t = proof m (L a) t
 
+{-
 proof1 :: Tensor d1 a -> Tensor d2 b -> (DepthDiff (ElontageL
+-}
 
 -- TODO why (a, a) again?
 strongerUnsafeBroadcast :: Tensor d1 a -> Tensor d2 a -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, a)
 strongerUnsafeBroadcast t1 t2 = proof t1 t2 $ unsafeBroadcast t1' t2'
+-- strongerUnsafeBroadcast t1 t2 = unsafeBroadcast t1' t2'
     where (t1', t2') = elongate t1 t2
-strongerUnsafeBroadcast as bs = z
-    -- where qwe = elongate as bs
-    where SDP x y = elongate as bs
-          z = unsafeBroadcast x y
--}
+
+strongerUnsafestBroadcast :: CanBroadcast (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ True => Tensor d1 a -> Tensor d2 a -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, a)
+strongerUnsafestBroadcast t1 t2 = unsafestBroadcast t1' t2'
+    where (t1', t2') = elongate t1 t2
 
 instance Functor (Tensor d) where
     fmap f (L x) = L (f x)
@@ -168,12 +170,18 @@ tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
     where (as, rs') = tear rs
 
 unsafeBroadcast :: DepthDiff d1 d2 ~ Equal => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
--- unsafeBroadcast :: Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 unsafeBroadcast (L a) (L b) = L (a, b)
 unsafeBroadcast (H as) (H bs) = H (unsafeBroadcast as bs)
 unsafeBroadcast (a :- as) (b :- bs) = ((unsafeBroadcast a b) :- (unsafeBroadcast as bs))
 unsafeBroadcast (a :- as) (H bs) = (unsafeBroadcast a bs) :- (unsafeBroadcast as (H bs))
 unsafeBroadcast (H as) (b :- bs) = (unsafeBroadcast as b) :- (unsafeBroadcast (H as) bs)
+
+unsafestBroadcast :: Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+unsafestBroadcast (L a) (L b) = L (a, b)
+unsafestBroadcast (H as) (H bs) = H (unsafestBroadcast as bs)
+unsafestBroadcast (a :- as) (b :- bs) = ((unsafestBroadcast a b) :- (unsafestBroadcast as bs))
+unsafestBroadcast (a :- as) (H bs) = (unsafestBroadcast a bs) :- (unsafestBroadcast as (H bs))
+unsafestBroadcast (H as) (b :- bs) = (unsafestBroadcast as b) :- (unsafestBroadcast (H as) bs)
 
 -- TODO shouldn't CanBroadcast imply SameDepth?
 weakBroadcast :: (DepthDiff d1 d2 ~ Equal, CanBroadcast d1 d2 ~ True) => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
@@ -247,6 +255,25 @@ sameLength (H (a :- v)) (H (_ :- v')) =
     case sameLength (H v) (H v') of
         Nothing -> Nothing
         Just (H v'') -> Just (H (a :- v''))
+
+-- testSumA :: Num a => Matrix m n a -> Matrix I n a
+testSumA :: Num a => Tensor (DCons m d) a -> Tensor (DCons I d) a
+testSumA = undefined
+testDivA m = (uncurry (/)) <$> weakBroadcast m (testSumA m)
+
+-- testSumA' :: Num a => Matrix m n a -> Tensor (DCons n DNil) a
+testSumA' :: Num a => Tensor (DCons m d) a -> Tensor (DCons I d) a
+testSumA' = undefined
+
+testDivA' m = (uncurry (/)) <$> strongerUnsafestBroadcast m (testSumA' m)
+
+testSumB :: Num a => Matrix m n a -> Matrix m I a
+testSumB = undefined
+testDivB m = (uncurry (/)) <$> weakBroadcast m (testSumB m)
+
+testSumB' :: Num a => Matrix m n a -> Tensor (DCons m DNil) a
+testSumB' = undefined
+testDivB' m = (uncurry (/)) <$> strongerUnsafestBroadcast m (testSumB' m)
 
 {-
 infixr 6 :>
