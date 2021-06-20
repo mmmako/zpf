@@ -28,12 +28,10 @@ type family CanBroadcast (d1 :: Dim) (d2 :: Dim) :: Bool where
     CanBroadcast (DCons n d1) (DCons n d2) = CanBroadcast d1 d2
     CanBroadcast _ _ = False
 
-{-
 type family SameDepth (d1 :: Dim) (d2 :: Dim) :: Bool where
     SameDepth DNil DNil = True
     SameDepth (DCons _ d1) (DCons _ d2) = SameDepth d1 d2
     SameDepth _ _ = False
--}
 
 data Longer = LeftBy PNat | RightBy PNat | Equal
 
@@ -125,23 +123,25 @@ elongateInternal t1 t2 (SLeftBy n) = (t1, rpad t2 n)
 elongate :: Tensor d1 a -> Tensor d2 a -> (Tensor (ElongateLeft d1 d2) a, Tensor (ElongateRight d1 d2) a)
 elongate t1 t2 = elongateInternal t1 t2 (depthDiff t1 t2)
 
+{-
 proof :: Tensor d1 a -> Tensor d2 b -> (DepthDiff (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ Equal => t) -> t
 proof (L _) (L _) t = t
 proof (H (L _)) (L a) t = proof m (L a) t
 
-{-
 proof1 :: Tensor d1 a -> Tensor d2 b -> (DepthDiff (ElontageL
 -}
 
 -- TODO why (a, a) again?
-strongerUnsafeBroadcast :: Tensor d1 a -> Tensor d2 a -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, a)
-strongerUnsafeBroadcast t1 t2 = proof t1 t2 $ unsafeBroadcast t1' t2'
--- strongerUnsafeBroadcast t1 t2 = unsafeBroadcast t1' t2'
+broadcast :: (SameDepth (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ True, CanBroadcast (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ True)
+    => Tensor d1 a -> Tensor d2 a -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, a)
+broadcast t1 t2 = unsafeBroadcast t1' t2'
     where (t1', t2') = elongate t1 t2
 
+{-
 strongerUnsafestBroadcast :: CanBroadcast (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ True => Tensor d1 a -> Tensor d2 a -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, a)
 strongerUnsafestBroadcast t1 t2 = unsafestBroadcast t1' t2'
     where (t1', t2') = elongate t1 t2
+-}
 
 instance Functor (Tensor d) where
     fmap f (L x) = L (f x)
@@ -169,22 +169,25 @@ tear (H ((L a) :- as)) = (H (H (L a)), H as)
 tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
     where (as, rs') = tear rs
 
-unsafeBroadcast :: DepthDiff d1 d2 ~ Equal => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+-- unsafeBroadcast :: DepthDiff d1 d2 ~ Equal => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+unsafeBroadcast :: SameDepth d1 d2 ~ True => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 unsafeBroadcast (L a) (L b) = L (a, b)
 unsafeBroadcast (H as) (H bs) = H (unsafeBroadcast as bs)
 unsafeBroadcast (a :- as) (b :- bs) = ((unsafeBroadcast a b) :- (unsafeBroadcast as bs))
 unsafeBroadcast (a :- as) (H bs) = (unsafeBroadcast a bs) :- (unsafeBroadcast as (H bs))
 unsafeBroadcast (H as) (b :- bs) = (unsafeBroadcast as b) :- (unsafeBroadcast (H as) bs)
 
+{-
 unsafestBroadcast :: Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 unsafestBroadcast (L a) (L b) = L (a, b)
 unsafestBroadcast (H as) (H bs) = H (unsafestBroadcast as bs)
 unsafestBroadcast (a :- as) (b :- bs) = ((unsafestBroadcast a b) :- (unsafestBroadcast as bs))
 unsafestBroadcast (a :- as) (H bs) = (unsafestBroadcast a bs) :- (unsafestBroadcast as (H bs))
 unsafestBroadcast (H as) (b :- bs) = (unsafestBroadcast as b) :- (unsafestBroadcast (H as) bs)
+-}
 
 -- TODO shouldn't CanBroadcast imply SameDepth?
-weakBroadcast :: (DepthDiff d1 d2 ~ Equal, CanBroadcast d1 d2 ~ True) => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
+weakBroadcast :: (SameDepth d1 d2 ~ True, CanBroadcast d1 d2 ~ True) => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 weakBroadcast = unsafeBroadcast
 
 infixl 6 |+|
@@ -225,24 +228,31 @@ showEx Nothing = "Nothing"
 mapEx2 :: Ex2 (Matrix1 Integer) -> Ex2 (Matrix1 Integer)
 mapEx2 (Ex2 (Matrix1 m)) = Ex2 (Matrix1 (fmap (2*) m))
 
+-- TODO use Maybe monad
 fromLL :: [[Integer]] -> Maybe (Ex2 (Matrix1 Integer))
+fromLL [] = Nothing
 fromLL [l] = case fromL l of
-    Ex (Matrix1 m) -> Just (Ex2 (Matrix1 m))
+    Just (Ex (Matrix1 m)) -> Just (Ex2 (Matrix1 m))
+    Nothing -> Nothing
 fromLL (l:ls) = case fromLL ls of
     Nothing -> Nothing
-    Just m -> addLine (fromL l) m
+    Just m -> case fromL l of
+        Just l -> addLine l m
+        Nothing -> Nothing
 
-fromL :: [Integer] -> Ex (Matrix1 Integer I)
-fromL [x] = Ex (Matrix1 (H (H (L x))))
+fromL :: [Integer] -> Maybe (Ex (Matrix1 Integer I))
+fromL [] = Nothing
+fromL [x] = Just $ Ex (Matrix1 (H (H (L x))))
 fromL (x:xs) = case fromL xs of
-    Ex (Matrix1 (H v)) -> Ex (Matrix1 (H (L x :- v)))
+    Nothing -> Nothing
+    Just (Ex (Matrix1 (H v))) -> Just (Ex (Matrix1 (H (L x :- v))))
 
 addLine :: Ex (Matrix1 Integer I) -> Ex2 (Matrix1 Integer) -> Maybe (Ex2 (Matrix1 Integer))
 addLine (Ex (Matrix1 m@(H _))) (Ex2 (Matrix1 m'@(H _))) =
     case sameLength m m' of
         Nothing -> Nothing
         Just (H m'') -> Just (Ex2 (Matrix1 (m'' :- m')))
-addLine (Ex (Matrix1 m@(H _))) (Ex2 (Matrix1 m''@(m' :- ms))) =
+addLine (Ex (Matrix1 m@(H _))) (Ex2 (Matrix1 m''@(m' :- _))) =
     case sameLength m (H m') of
         Nothing -> Nothing
         Just (H m''') -> Just (Ex2 (Matrix1 (m''' :- m'')))
@@ -263,9 +273,38 @@ testDivA m = (uncurry (/)) <$> weakBroadcast m (testSumA m)
 
 -- testSumA' :: Num a => Matrix m n a -> Tensor (DCons n DNil) a
 testSumA' :: Num a => Tensor (DCons m d) a -> Tensor (DCons I d) a
-testSumA' = undefined
+testSumA' (H m) = H m
+testSumA' (m :- ms) = (uncurry (+)) <$> mp
+    where m' = testSumA' (H m)
+          ms' = testSumA' ms
+          mp = asd m' ms'
 
-testDivA' m = (uncurry (/)) <$> strongerUnsafestBroadcast m (testSumA' m)
+asd :: Tensor d a -> Tensor d a -> Tensor d (a, a)
+asd t1 t2 = brDD t1 $ depthDD t1 $ unsafeBroadcast t1 t2
+
+maxNN :: Tensor (DCons n d) a -> (Max n n ~ n => t) -> t
+maxNN (H _) t = t
+maxNN (_ :- as) t = maxNN as t
+
+maxNN' :: Tensor (DCons m (DCons n d)) a -> (Max n n ~ n => t) -> t
+maxNN' (H (H _)) t = t
+maxNN' (H (_ :- as)) t = maxNN' (H as) t
+maxNN' ((H _) :- _) t = t
+maxNN' ((_ :- as) :- _) t = maxNN' (H as) t
+
+depthDD :: Tensor d a -> (SameDepth d d ~ True => t) -> t
+depthDD (L _) t = t
+depthDD (H m) t = depthDD m t
+depthDD (m :- _) t = depthDD m t
+
+brDD :: Tensor d a -> (d <~> d ~ d => t) -> t 
+brDD (L _) t = t
+brDD (H m) t = brDD m t
+brDD (_ :- ms) t = brDD ms t
+
+-- testDivA' :: Fractional a => Matrix m n a -> Matrix m (Max n n) a
+testDivA' :: Fractional a => Matrix m n a -> Matrix m n a
+testDivA' m = maxNN' m ((uncurry (/)) <$> broadcast m (testSumA' m))
 
 testSumB :: Num a => Matrix m n a -> Matrix m I a
 testSumB = undefined
@@ -273,119 +312,4 @@ testDivB m = (uncurry (/)) <$> weakBroadcast m (testSumB m)
 
 testSumB' :: Num a => Matrix m n a -> Tensor (DCons m DNil) a
 testSumB' = undefined
-testDivB' m = (uncurry (/)) <$> strongerUnsafestBroadcast m (testSumB' m)
-
-{-
-infixr 6 :>
-data Vec :: PNat -> * -> * where
-    V    :: a -> Vec I a
-    (:>) :: a -> Vec n a -> Vec (S n) a
-
-deriving instance Show a => Show (Vec n a)
-
-toVector :: [Integer] -> Ex (Flip Vec Integer)
-toVector [x] = Ex $ Flip $ V x
-toVector (x:xs) =
-    case toVector xs of
-        Ex (Flip xs') -> Ex (Flip (x :> xs'))
-
-readImage :: String -> Maybe (Ex (Flip Tensor Integer))
-readImage s = Just $ Ex $ Flip $ L 123
-    where ll = map (map (read :: String -> Integer) . words) $ lines s
--}
-
-{-
-gmul m'@(H ((L _) :- _)) m@((H (L _)) :- _) = mul m' m
-gmul v@(H _) t@((_ :- _) :- _) = mul v t
-gmul m'@(r :- rs) m = mul m' m
--}
-
-{-
-data Which = WLeft | WRight | WBoth
-
-type family Expand (d1 :: Dim) (d2 :: Dim) :: (Which, Dim) where
-    Expand (DNil m) (DNil n) = (WBoth, DNil (Max m n))
-
-needs UndecidableInstances, meh
-type family Rev (d :: Dim) (a :: Dim) :: Dim where
-    Rev (DNil n) a = DCons n a
-    Rev (DCons n d) a = Rev d (DCons n a)
--}
-
-{-
-type family DMax (d1 :: Dim) (d2 :: Dim) :: Dim where
-    DMax (DNil m) (DNil n) = DNil (Max m n)
-    DMax (DCons m d1) (DCons n d2) = DCons (Max m n) (DMax d1 d2)
-
-infixr 6 :>
-data Vec :: PNat -> * -> * where
-    V    :: a -> Vec I a
-    (:>) :: a -> Vec n a -> Vec (S n) a
-
-deriving instance Show a => Show (Vec n a)
-
-instance Functor (Vec n) where
-    fmap f (V a) = V (f a)
-    fmap f (a :> as) = f a :> fmap f as
-
-type family (m :: PNat) <~> (n :: PNat) :: Bool where
-    n <~> n = True
-    n <~> I = True
-    I <~> n = True
-    _ <~> _ = False
-
-type family (m :: PNat) <~~> (n :: PNat) :: PNat where
-    I <~~> n = n
-    n <~~> I = n
-    (S m) <~~> (S n) = S (m <~~> n)
-
-head :: Vec n a -> a
-head (V a) = a
-head (a :> _) = a
-
-match :: a -> Vec n b -> Vec n (a, b)
-match a (V b) = V (a, b)
-match a (b :> bs) = (a, b) :> match a bs
-
-broadcastUnsafe :: Vec m a -> Vec n b -> Vec (m <~~> n) (a, b)
-broadcastUnsafe (V a) bs = match a bs
-broadcastUnsafe (a :> as) (b :> bs) = (a, b) :> broadcastUnsafe as bs
-broadcastUnsafe as (V b) = (\(x, y) -> (y, x)) <$> match b as
-
-broadcast :: m <~> n ~ True => Vec m a -> Vec n b -> Vec (m <~~> n) (a, b)
-broadcast = broadcastUnsafe
-
--- NB: more like bzipWith
-bmap :: m <~> n ~ True => (a -> b -> c) -> Vec m a -> Vec n b -> Vec (m <~~> n) c
-bmap f as bs = (\(a, b) -> f a b) <$> broadcast as bs
-
-intToNat :: Int -> PNat
-intToNat 1 = I
-intToNat n = S (intToNat (n - 1))
-
-type WLenVec a = Ex (SPNat :*: Flip Vec a)
-
-wrapLenVec :: [a] -> WLenVec a
-wrapLenVec [] = undefined
-wrapLenVec [x] = Ex (SI :&: Flip (V x))
-wrapLenVec (x : xs) = case wrapLenVec xs of
-    Ex (n :&: Flip v) -> Ex (SS n :&: Flip (x :> v))
-
-type WVec a = Ex (Flip Vec a)
-
-wrapVec :: [a] -> WVec a
-wrapVec [] = undefined
-wrapVec [x]      = Ex (Flip (V x))
-wrapVec (x:xs)  = case wrapVec xs of
-  Ex (Flip v) -> Ex (Flip (x :> v))
-
-vlength' :: Vec n a -> Integer
-vlength' (V _) = 1
-vlength' (_ :> v) = 1 + vlength' v
-
-vlength :: Vec n a -> SPNat n
-vlength (V _) = SI
-vlength (_ :> v) = SS (vlength v)
-
-type WPNat = Ex SPNat
--}
+-- testDivB' m = (uncurry (/)) <$> strongerUnsafestBroadcast m (testSumB' m)
