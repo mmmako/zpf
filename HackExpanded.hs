@@ -3,6 +3,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 import TensorQuasi
+import System.Environment
 
 -- import Data.Type.Equality
 
@@ -211,19 +212,41 @@ data Ex2 (p :: k -> i -> *) where
     Ex2 :: p j l -> Ex2 p
 
 newtype Matrix1 a m n = Matrix1 (Tensor (DCons m (DCons n DNil)) a)
+newtype Vec1 a n = Vec1 (Tensor (DCons n DNil) a)
 
 main = do
+    [n] <- getArgs
+    let n' = read n
+    putStrLn $ mapEx $ makeLong n'
+    {-
+    let ll = [[i..i+2] | i <- [0,3..100]]
+        long = fromLL ll
+        small = [m|[[1 2 3] [3 4 5] [5 6 7]]|]
+    putStrLn $ showEx long
     str <- getContents
     let ll = map (map (read :: String -> Integer) . words) $ lines str
         m = (\(Just x) -> x) $ fromLL ll
         m' = mapEx2 m
     putStrLn $ showEx (Just m')
+    -}
 
 qwe str = let ll = map (map (read :: String -> Integer) . words) $ lines str in ll
 
 showEx :: Maybe (Ex2 (Matrix1 Integer)) -> String
 showEx (Just (Ex2 (Matrix1 m))) = show m
 showEx Nothing = "Nothing"
+
+makeLong :: Integer -> Ex (Vec1 (Tensor (DCons (S (S I)) DNil) Integer))
+makeLong n = (\(Just x) -> x) $ fromL' l -- Ex (Vec1 (H (L v)))
+    where -- v = [m|[1 2 3]|]
+          l = [(i, i+1, i+2) | i <- [0,3..3*n]]
+
+-- mapEx :: Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer)) -> String -- Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer))
+mapEx :: Ex (Vec1 (Tensor (DCons (S (S I)) DNil) Integer)) -> String -- Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer))
+mapEx (Ex (Vec1 v)) = show m''
+    where m' = unsplit v
+          small = [m|[[1 2 3] [3 4 5] [5 6 7]]|]
+          m'' = mul m' small
 
 mapEx2 :: Ex2 (Matrix1 Integer) -> Ex2 (Matrix1 Integer)
 mapEx2 (Ex2 (Matrix1 m)) = Ex2 (Matrix1 (fmap (2*) m))
@@ -246,6 +269,13 @@ fromL [x] = Just $ Ex (Matrix1 (H (H (L x))))
 fromL (x:xs) = case fromL xs of
     Nothing -> Nothing
     Just (Ex (Matrix1 (H v))) -> Just (Ex (Matrix1 (H (L x :- v))))
+
+fromL' :: [(Integer, Integer, Integer)] -> Maybe (Ex (Vec1 (Tensor (DCons (S (S I)) DNil) Integer)))
+fromL' [] = Nothing
+fromL' [(x, y, z)] = Just $ Ex (Vec1 (H (L (L x :- L y :- H (L z)))))
+fromL' ((x, y, z):xs) = case fromL' xs of
+    Nothing -> Nothing
+    Just (Ex (Vec1 v)) -> Just (Ex (Vec1 (L (L x :- L y :- H (L z)) :- v)))
 
 addLine :: Ex (Matrix1 Integer I) -> Ex2 (Matrix1 Integer) -> Maybe (Ex2 (Matrix1 Integer))
 addLine (Ex (Matrix1 m@(H _))) (Ex2 (Matrix1 m'@(H _))) =
@@ -313,3 +343,13 @@ testDivB m = (uncurry (/)) <$> weakBroadcast m (testSumB m)
 testSumB' :: Num a => Matrix m n a -> Tensor (DCons m DNil) a
 testSumB' = undefined
 -- testDivB' m = (uncurry (/)) <$> strongerUnsafestBroadcast m (testSumB' m)
+
+unsplit :: Tensor d (Tensor d' a) -> Tensor (DimAppend d d') a
+unsplit (L t) = t
+unsplit (H t) = H (unsplit t)
+unsplit (t :- t') = unsplit t :- unsplit t'
+
+{-
+split :: Tensor (DimAppend d (DCons m (DCons n DNil))) a -> Tensor d (Tensor (DCons m (DCons n DNil)) a)
+split m@(H (H (L a))) = L m
+-}
