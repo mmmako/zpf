@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -W #-}
-{-# LANGUAGE GADTs, DataKinds, KindSignatures, StandaloneDeriving, TypeFamilies, TypeOperators, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, TemplateHaskell, QuasiQuotes, PolyKinds, FlexibleContexts, RankNTypes #-}
+{-# LANGUAGE GADTs, DataKinds, KindSignatures, StandaloneDeriving, TypeFamilies, TypeOperators, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, TemplateHaskell, QuasiQuotes, PolyKinds, FlexibleContexts, RankNTypes, FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 import TensorQuasi
@@ -17,11 +17,6 @@ type family Max (m :: PNat) (n :: PNat) :: PNat where
 type family DimAppend (d1 :: Dim) (d2 :: Dim) :: Dim where
     DimAppend DNil d = d
     DimAppend (DCons n d1) d = DCons n (DimAppend d1 d)
-
--- type family DimLUnAppend (d1 :: Dim) (d2 :: Dim) :: Dim where
-type family DimLUnAppend (d1 :: Dim) (d3 :: DimAppend d1 d2) (d4 :: Dim) :: Dim where
-    DimLUnAppend (DCons n d1) (DCons m d2) = DimLUnAppend d1 d2
-    DimLUnAppend d DNil = d
 
 type family (d1 :: Dim) <~> (d2 :: Dim) :: Dim where
     DNil <~> DNil = DNil
@@ -196,11 +191,13 @@ unsafestBroadcast (H as) (b :- bs) = (unsafestBroadcast as b) :- (unsafestBroadc
 weakBroadcast :: (SameDepth d1 d2 ~ True, CanBroadcast d1 d2 ~ True) => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 weakBroadcast = unsafeBroadcast
 
+{-
 infixl 6 |+|
 a |+| b = uncurry (+) <$> weakBroadcast a b
 
 infixl 7 |*|
 a |*| b = uncurry (*) <$> weakBroadcast a b
+-}
 
 data Ex (p :: k -> *) where
     Ex :: p i -> Ex p
@@ -220,9 +217,9 @@ newtype Matrix1 a m n = Matrix1 (Tensor (DCons m (DCons n DNil)) a)
 newtype Vec1 a n = Vec1 (Tensor (DCons n DNil) a)
 
 main = do
-    [n] <- getArgs
-    let n' = read n
-    putStrLn $ mapEx (makeLong' n')
+    [cnt] <- getArgs
+    let cnt' = read cnt
+    putStrLn $ mapEx (makeLong' cnt')
     {-
     putStrLn $ mapEx $ makeLong' n'
     let ll = [[i..i+2] | i <- [0,3..100]]
@@ -259,10 +256,12 @@ makeLong' n = case fromLL l of
 
 -- mapEx :: Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer)) -> String -- Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer))
 mapEx :: Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer)) -> String
-mapEx (Ex2 (Matrix1 v)) = show m'
+mapEx (Ex2 (Matrix1 v)) = show m'''
     where m' = unsplit v
           -- small = [m|[[1 2 3] [3 4 5] [5 6 7]]|]
-          -- m'' = mul m' small
+          small = [m|[[1 2 3 3] [3 4 5 5] [5 6 7 7]]|]
+          m'' = splitOne m'
+          m''' = unsplit $ (\x -> mul x small) <$> m''
 
 mapEx2 :: Ex2 (Matrix1 Integer) -> Ex2 (Matrix1 Integer)
 mapEx2 (Ex2 (Matrix1 m)) = Ex2 (Matrix1 (fmap (2*) m))
@@ -382,13 +381,28 @@ split SDNil t = L t
 split (SDCons _ d) (H t) = H (split d t)
 split (SDCons (SS n) d) (t :- ts) = (split d t) :- (split (SDCons n d) ts)
 
+splitOne :: Tensor (DCons n d) a -> Tensor (DCons n DNil) (Tensor d a)
+splitOne (H t) = H (L t)
+splitOne (t :- ts) = L t :- splitOne ts
+
 toSDim :: Tensor d a -> SDim d
 toSDim (L _) = SDNil
 toSDim (H t) = SDCons SI (toSDim t)
 toSDim (_ :- ts) = case toSDim ts of
     SDCons n d -> SDCons (SS n) d
 
-{-
-insaneProof :: SDim d' -> (DimLUnAppend (Reverse (DimAppend d d') DNil) (Reverse d' DNil) ~ Reverse d DNil => t) -> t
-insaneProof SDNil t = _
--}
+range :: Num a => SPNat n -> Tensor (DCons n DNil) a
+-- range SI = H (L 0)
+range n = f n 0
+    where f :: Num a => SPNat n -> a -> Tensor (DCons n DNil) a
+          f SI x = H (L x)
+          f (SS n) x = L x :- f n (x + 1)
+
+infixl 6 |+|
+infixl 6 |-|
+infixl 7 |*|
+infixl 7 |/|
+a |+| b = uncurry (+) <$> broadcast a b
+a |-| b = uncurry (-) <$> broadcast a b
+a |*| b = uncurry (*) <$> broadcast a b
+a |/| b = uncurry (/) <$> broadcast a b

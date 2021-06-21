@@ -51,6 +51,12 @@ m = QuasiQuoter { quoteExp = f , quotePat = g}
                     Left _ -> error "error while parsing tensor"
                     Right nt -> ntToTp nt
 
+n = QuasiQuoter { quoteExp = f }
+    where f s = return $ g $ read s
+          g n | n < 1 = error "positive interger must be at least 1"
+          g 1 = ConE 'SI
+          g n = AppE (ConE 'SS) (g (n - 1))
+
 ntToT :: NT Integer -> Q Exp
 ntToT (NTL n) = AppE (ConE 'L) <$> liftData n
 ntToT (NTV v) = return $ VarE $ mkName v
