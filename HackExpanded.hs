@@ -15,7 +15,7 @@ type family Max (m :: PNat) (n :: PNat) :: PNat where
     Max (S m) (S n) = S (Max m n)
 
 type family DimAppend (d1 :: Dim) (d2 :: Dim) :: Dim where
-    DimAppend DNil d = d -- TODO make sure it's not DCons I d
+    DimAppend DNil d = d
     DimAppend (DCons n d1) d = DCons n (DimAppend d1 d)
 
 type family (d1 :: Dim) <~> (d2 :: Dim) :: Dim where
@@ -217,8 +217,9 @@ newtype Vec1 a n = Vec1 (Tensor (DCons n DNil) a)
 main = do
     [n] <- getArgs
     let n' = read n
-    putStrLn $ mapEx $ makeLong n'
+    putStrLn $ mapEx (makeLong' n')
     {-
+    putStrLn $ mapEx $ makeLong' n'
     let ll = [[i..i+2] | i <- [0,3..100]]
         long = fromLL ll
         small = [m|[[1 2 3] [3 4 5] [5 6 7]]|]
@@ -236,23 +237,33 @@ showEx :: Maybe (Ex2 (Matrix1 Integer)) -> String
 showEx (Just (Ex2 (Matrix1 m))) = show m
 showEx Nothing = "Nothing"
 
+{-
 makeLong :: Integer -> Ex (Vec1 (Tensor (DCons (S (S I)) DNil) Integer))
-makeLong n = (\(Just x) -> x) $ fromL' l -- Ex (Vec1 (H (L v)))
+makeLong n = Ex2 (Matrix1 (f <$> m))
     where -- v = [m|[1 2 3]|]
           l = [(i, i+1, i+2) | i <- [0,3..3*n]]
+          f (x, y, z) = L (L x :- L y :- H (L z))
+          Just (Ex2 (Matrix1 m)) = fromL l
+-}
+
+makeLong' :: Integer -> Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer))
+makeLong' n = case fromLL l of
+          Just (Ex2 (Matrix1 m)) -> Ex2 (Matrix1 (f <$> m))
+    where l = [[(i, i+1, i+2) | i <- [3*j,3*j+3..3*j+n]] | j <- [0,3*n..3*n*n]]
+          f (x, y, z) = L x :- L y :- H (L z)
 
 -- mapEx :: Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer)) -> String -- Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer))
-mapEx :: Ex (Vec1 (Tensor (DCons (S (S I)) DNil) Integer)) -> String -- Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer))
-mapEx (Ex (Vec1 v)) = show m''
+mapEx :: Ex2 (Matrix1 (Tensor (DCons (S (S I)) DNil) Integer)) -> String
+mapEx (Ex2 (Matrix1 v)) = show m'
     where m' = unsplit v
-          small = [m|[[1 2 3] [3 4 5] [5 6 7]]|]
-          m'' = mul m' small
+          -- small = [m|[[1 2 3] [3 4 5] [5 6 7]]|]
+          -- m'' = mul m' small
 
 mapEx2 :: Ex2 (Matrix1 Integer) -> Ex2 (Matrix1 Integer)
 mapEx2 (Ex2 (Matrix1 m)) = Ex2 (Matrix1 (fmap (2*) m))
 
 -- TODO use Maybe monad
-fromLL :: [[Integer]] -> Maybe (Ex2 (Matrix1 Integer))
+fromLL :: [[a]] -> Maybe (Ex2 (Matrix1 a))
 fromLL [] = Nothing
 fromLL [l] = case fromL l of
     Just (Ex (Matrix1 m)) -> Just (Ex2 (Matrix1 m))
@@ -263,21 +274,23 @@ fromLL (l:ls) = case fromLL ls of
         Just l -> addLine l m
         Nothing -> Nothing
 
-fromL :: [Integer] -> Maybe (Ex (Matrix1 Integer I))
+fromL :: [a] -> Maybe (Ex (Matrix1 a I))
 fromL [] = Nothing
 fromL [x] = Just $ Ex (Matrix1 (H (H (L x))))
 fromL (x:xs) = case fromL xs of
     Nothing -> Nothing
     Just (Ex (Matrix1 (H v))) -> Just (Ex (Matrix1 (H (L x :- v))))
 
+{-
 fromL' :: [(Integer, Integer, Integer)] -> Maybe (Ex (Vec1 (Tensor (DCons (S (S I)) DNil) Integer)))
 fromL' [] = Nothing
 fromL' [(x, y, z)] = Just $ Ex (Vec1 (H (L (L x :- L y :- H (L z)))))
 fromL' ((x, y, z):xs) = case fromL' xs of
     Nothing -> Nothing
     Just (Ex (Vec1 v)) -> Just (Ex (Vec1 (L (L x :- L y :- H (L z)) :- v)))
+-}
 
-addLine :: Ex (Matrix1 Integer I) -> Ex2 (Matrix1 Integer) -> Maybe (Ex2 (Matrix1 Integer))
+addLine :: Ex (Matrix1 a I) -> Ex2 (Matrix1 a) -> Maybe (Ex2 (Matrix1 a))
 addLine (Ex (Matrix1 m@(H _))) (Ex2 (Matrix1 m'@(H _))) =
     case sameLength m m' of
         Nothing -> Nothing
@@ -350,6 +363,22 @@ unsplit (H t) = H (unsplit t)
 unsplit (t :- t') = unsplit t :- unsplit t'
 
 {-
-split :: Tensor (DimAppend d (DCons m (DCons n DNil))) a -> Tensor d (Tensor (DCons m (DCons n DNil)) a)
-split m@(H (H (L a))) = L m
+diffApp :: DepthDiff (DimAppend d d') d' ~ Equal => Tensor d' a -> Tensor (DimAppend d d') a -> (d ~ DNil => t) -> t
+diffApp = undefined
+
+split :: forall d d' a. Tensor d' a -> Tensor (DimAppend d d') a -> Tensor d (Tensor d' a)
+split small big = case depthDiff big small of
+    SEqual -> diffApp @d small big $ L small
 -}
+
+-- TODO this is nice and easy, but it works like vtake and needs the left "ruler", while we would like to do it from the right
+split :: SDim d -> Tensor (DimAppend d d') a -> Tensor d (Tensor d' a)
+split SDNil t = L t
+split (SDCons _ d) (H t) = H (split d t)
+split (SDCons (SS n) d) (t :- ts) = (split d t) :- (split (SDCons n d) ts)
+
+toSDim :: Tensor d a -> SDim d
+toSDim (L _) = SDNil
+toSDim (H t) = SDCons SI (toSDim t)
+toSDim (_ :- ts) = case toSDim ts of
+    SDCons n d -> SDCons (SS n) d
