@@ -18,6 +18,11 @@ type family DimAppend (d1 :: Dim) (d2 :: Dim) :: Dim where
     DimAppend DNil d = d
     DimAppend (DCons n d1) d = DCons n (DimAppend d1 d)
 
+-- type family DimLUnAppend (d1 :: Dim) (d2 :: Dim) :: Dim where
+type family DimLUnAppend (d1 :: Dim) (d3 :: DimAppend d1 d2) (d4 :: Dim) :: Dim where
+    DimLUnAppend (DCons n d1) (DCons m d2) = DimLUnAppend d1 d2
+    DimLUnAppend d DNil = d
+
 type family (d1 :: Dim) <~> (d2 :: Dim) :: Dim where
     DNil <~> DNil = DNil
     DCons m d1 <~> DCons n d2 = DCons (Max m n) (d1 <~> d2)
@@ -382,3 +387,8 @@ toSDim (L _) = SDNil
 toSDim (H t) = SDCons SI (toSDim t)
 toSDim (_ :- ts) = case toSDim ts of
     SDCons n d -> SDCons (SS n) d
+
+{-
+insaneProof :: SDim d' -> (DimLUnAppend (Reverse (DimAppend d d') DNil) (Reverse d' DNil) ~ Reverse d DNil => t) -> t
+insaneProof SDNil t = _
+-}
