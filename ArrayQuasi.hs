@@ -1,11 +1,11 @@
 {-# OPTIONS_GHC -W #-}
-{-# LANGUAGE GADTs, DataKinds, KindSignatures, StandaloneDeriving, TemplateHaskell #-}
+{-# LANGUAGE GADTs, DataKinds, KindSignatures, StandaloneDeriving, TemplateHaskell, FlexibleInstances #-}
 
-module TensorQuasi where
+module ArrayQuasi where
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
-import ParseTensor
+import ParseArray
 import Text.ParserCombinators.Parsec
 import Control.Monad
 
@@ -26,26 +26,22 @@ data SDim :: Dim -> * where
     SDCons :: SPNat n -> SDim d -> SDim (DCons n d)
 
 infixr 6 :-
-data Tensor :: Dim -> * -> * where
-    L    :: a -> Tensor DNil a
-    (:-) :: Tensor d a -> Tensor (DCons n d) a -> Tensor (DCons (S n) d) a
-    H    :: Tensor d a -> Tensor (DCons I d) a
+data Array :: Dim -> * -> * where
+    L    :: a -> Array DNil a
+    (:-) :: Array d a -> Array (DCons n d) a -> Array (DCons (S n) d) a
+    H    :: Array d a -> Array (DCons I d) a
 
--- deriving instance Show a => Show (Tensor d a)
-instance Show a => Show (Tensor d a) where
+instance Show a => Show (Array d a) where
     show (L a) = show a
-    show (H t) = "[" ++ show t ++ "]"
-    show t = "[" ++ f t ++ "]"
-        where f :: Show a => Tensor d' a -> String
+    show (H a) = "[" ++ show a ++ "]"
+    show a = "[" ++ f a ++ "]"
+        where f :: Show a => Array d' a -> String
               f (h :- t) = show h ++ " " ++ f t
-              f (H t) = show t
+              f (H a) = show a
 
 m = QuasiQuoter { quoteExp = f , quotePat = g}
     where f s = case parse finalNt "" s of
                     Left _ -> error "error while parsing tensor"
-                    -- Right nt -> case shape nt of
-                        -- Nothing -> error "wrong shape of tensor"
-                        -- Just _ -> ntToT nt
                     Right nt -> ntToT nt
           g s = case parse finalNt "" s of
                     Left _ -> error "error while parsing tensor"
@@ -57,25 +53,24 @@ n = QuasiQuoter { quoteExp = f }
           g 1 = ConE 'SI
           g n = AppE (ConE 'SS) (g (n - 1))
 
-ntToT :: NT Integer -> Q Exp
-ntToT (NTL n) = AppE (ConE 'L) <$> liftData n
-ntToT (NTV v) = return $ VarE $ mkName v
-ntToT (NTLV v) = return $ AppE (ConE 'L) $ VarE $ mkName v
-ntToT (NT nts') = let (nt:nts) = reverse nts' in
+ntToT :: NA Integer -> Q Exp
+ntToT (NAL n) = AppE (ConE 'L) <$> liftData n
+ntToT (NAV v) = return $ VarE $ mkName v
+ntToT (NALV v) = return $ AppE (ConE 'L) $ VarE $ mkName v
+ntToT (NA nts') = let (nt:nts) = reverse nts' in
         do a <- AppE (ConE 'H) <$> ntToT nt
            foldM f a nts
     where f e' nt = do
             e <- ntToT nt
             return (AppE (AppE (ConE '(:-)) e) e')
 
-ntToTp :: NT Integer -> Q Pat
-ntToTp (NTL n) = return $ ConP 'L [LitP $ IntegerL n]
-ntToTp (NTV v) = return $ VarP $ mkName v
-ntToTp (NTLV v) = return $ ConP 'L [VarP $ mkName v]
-ntToTp (NT nts') = let (nt:nts) = reverse nts' in
+ntToTp :: NA Integer -> Q Pat
+ntToTp (NAL n) = return $ ConP 'L [LitP $ IntegerL n]
+ntToTp (NAV v) = return $ VarP $ mkName v
+ntToTp (NALV v) = return $ ConP 'L [VarP $ mkName v]
+ntToTp (NA nts') = let (nt:nts) = reverse nts' in
         do a <- ConP 'H <$> (:[]) <$> ntToTp nt
            foldM f a (reverse nts)
     where f p' nt = do
             p <- ntToTp nt
             return $ ConP '(:-) [p, p']
-
