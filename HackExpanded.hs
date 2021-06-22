@@ -282,6 +282,15 @@ fromLL (l:ls) = case fromLL ls of
         Just l -> addLine l m
         Nothing -> Nothing
 
+type family ToList (d :: Dim) (a :: *) :: * where
+    ToList DNil a = a
+    ToList (DCons n d) a = [ToList d a]
+
+toLL' :: Tensor d a -> ToList d a
+toLL' (L a) = a
+toLL' (H as) = [toLL' as]
+toLL' (a :- as) = toLL' a:toLL' as
+
 toL :: Tensor (DCons n DNil) a -> [a]
 toL (H (L a)) = [a]
 toL ((L a) :- as) = a:toL as
