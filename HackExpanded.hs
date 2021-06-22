@@ -2,6 +2,8 @@
 {-# LANGUAGE GADTs, DataKinds, KindSignatures, StandaloneDeriving, TypeFamilies, TypeOperators, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, TemplateHaskell, QuasiQuotes, PolyKinds, FlexibleContexts, RankNTypes, FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+module HackExpanded where
+
 import TensorQuasi
 import System.Environment
 
@@ -216,6 +218,7 @@ data Ex2 (p :: k -> i -> *) where
 newtype Matrix1 a m n = Matrix1 (Tensor (DCons m (DCons n DNil)) a)
 newtype Vec1 a n = Vec1 (Tensor (DCons n DNil) a)
 
+{-
 main = do
     [cnt] <- getArgs
     let cnt' = read cnt
@@ -232,6 +235,7 @@ main = do
         m' = mapEx2 m
     putStrLn $ showEx (Just m')
     -}
+-}
 
 qwe str = let ll = map (map (read :: String -> Integer) . words) $ lines str in ll
 
@@ -277,6 +281,14 @@ fromLL (l:ls) = case fromLL ls of
     Just m -> case fromL l of
         Just l -> addLine l m
         Nothing -> Nothing
+
+toL :: Tensor (DCons n DNil) a -> [a]
+toL (H (L a)) = [a]
+toL ((L a) :- as) = a:toL as
+
+toLL :: Matrix m n a -> [[a]]
+toLL (H as) = [toL as]
+toLL (a :- as) = toL a:toLL as
 
 fromL :: [a] -> Maybe (Ex (Matrix1 a I))
 fromL [] = Nothing
