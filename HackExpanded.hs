@@ -88,7 +88,7 @@ longerS (SRightBy n) = SRightBy (SS n)
 
 -- mmmmm this is a nice function
 -- wait, but shouldn't it be on SDim? meh
-depthDiff :: Tensor d1 a -> Tensor d2 a -> SLonger (DepthDiff d1 d2)
+depthDiff :: Tensor d1 a -> Tensor d2 b -> SLonger (DepthDiff d1 d2)
 -- DepthDiff DNil DNil = Equal
 depthDiff (L _) (L _) = SEqual
 -- DepthDiff (DCons _ DNil) DNil = LeftBy I
@@ -122,8 +122,7 @@ elongateInternal t1 t2 SEqual = (t1, t2)
 elongateInternal t1 t2 (SRightBy n) = (rpad t1 n, t2)
 elongateInternal t1 t2 (SLeftBy n) = (t1, rpad t2 n)
 
--- TODO why `a` in both places????????
-elongate :: Tensor d1 a -> Tensor d2 a -> (Tensor (ElongateLeft d1 d2) a, Tensor (ElongateRight d1 d2) a)
+elongate :: Tensor d1 a -> Tensor d2 b -> (Tensor (ElongateLeft d1 d2) a, Tensor (ElongateRight d1 d2) b)
 elongate t1 t2 = elongateInternal t1 t2 (depthDiff t1 t2)
 
 {-
@@ -134,9 +133,8 @@ proof (H (L _)) (L a) t = proof m (L a) t
 proof1 :: Tensor d1 a -> Tensor d2 b -> (DepthDiff (ElontageL
 -}
 
--- TODO why (a, a) again?
 broadcast :: (SameDepth (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ True, CanBroadcast (ElongateLeft d1 d2) (ElongateRight d1 d2) ~ True)
-    => Tensor d1 a -> Tensor d2 a -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, a)
+    => Tensor d1 a -> Tensor d2 b -> Tensor (ElongateLeft d1 d2 <~> ElongateRight d1 d2) (a, b)
 broadcast t1 t2 = unsafeBroadcast t1' t2'
     where (t1', t2') = elongate t1 t2
 
@@ -172,7 +170,6 @@ tear (H ((L a) :- as)) = (H (H (L a)), H as)
 tear ((a :- r) :- rs) = ((H a) :- as, r :- rs')
     where (as, rs') = tear rs
 
--- unsafeBroadcast :: DepthDiff d1 d2 ~ Equal => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 unsafeBroadcast :: SameDepth d1 d2 ~ True => Tensor d1 a -> Tensor d2 b -> Tensor (d1 <~> d2) (a, b)
 unsafeBroadcast (L a) (L b) = L (a, b)
 unsafeBroadcast (H as) (H bs) = H (unsafeBroadcast as bs)
